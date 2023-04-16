@@ -49,7 +49,7 @@ SeqVerify has the following optional arguments:
 ##### CNVPytor
 * ```--bin_size``` (Type: Integer) Determines how many bp are binned together for the purposes of copy number variation detection. Default is 100000, the minimum value is 1, but anything below the original read length (1500 in the test data) will yield meaningless data.
 
-##Output
+## Output
 
 SeqVerify will output two folders, ```seqverify_output``` and ```seqverify_temp_output``` where "output" is the variable set in the ```--output``` argument. 
 
