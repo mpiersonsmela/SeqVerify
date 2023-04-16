@@ -32,7 +32,7 @@ seqverify.py --output sample --reads_1 sample_1.fastq --reads_2 sample_2.fastq -
 SeqVerify has the following required arguments:
 * ```--output``` (Type: String) Used as the identifying name for all the files and folders to do with the particular call. E.g. ```--output Sample1``` will cause the output folder to be named "seqverify_Sample1"
 * ```--reads_1``` and ```--reads_2``` (Type: String/Path) The paired-read FASTA/FASTQ, or gzipped FASTA/FASTQ source files for the reads. Also accepts paths to the files if they're not in the working folder.
-* ```--genome``` (Type: String/Path) Name or path of FASTA file to be used as reference genome for the reads (e.g. chm13, hg38).
+* ```--genome``` (Type: String/Path) Name or path of FASTA file to be used as reference genome for the reads (e.g. [CHM13](https://github.com/marbl/CHM13#downloads)).
 * ```--markers``` (Type: String/Path) Names or paths of FASTA files containing the genomes of the markers to detect (transgened, unwanted plasmids, etc.). Accepts more than one if necessary, space-separated. Can also be left blank.
 
 SeqVerify has the following optional arguments:
