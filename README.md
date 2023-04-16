@@ -27,7 +27,7 @@ An example SeqVerify call can be found below:
 seqverify.py --output sample --reads_1 sample_1.fastq --reads_2 sample_2.fastq --genome genome.fa --marker_sources marker.fa --database db8gb
 ```
 
-###Anatomy of a SeqVerify call
+### Anatomy of a SeqVerify call
 
 SeqVerify has the following required arguments:
 * ```--output``` (Type: String) Used as the identifying name for all the files and folders to do with the particular call. E.g. ```--output Sample1``` will cause the output folder to be named "seqverify_Sample1"
