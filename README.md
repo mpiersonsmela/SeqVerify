@@ -24,7 +24,7 @@ SeqVerify is a Python-based command line tool for analysis of whole genome seque
 An example SeqVerify call can be found below:
 
 ```
-seqverify.py --output sample --reads_1 sample_1.fastq --reads_2 sample_2.fastq --genome genome.fa --marker_sources marker.fa --database db8gb
+seqverify.py --output output_name --reads_1 sample_1.fastq --reads_2 sample_2.fastq --genome genome.fa --marker_sources transgenes.fa --database db8gb
 ```
 
 ### Anatomy of a SeqVerify call
@@ -33,7 +33,7 @@ SeqVerify has the following required arguments:
 * ```--output``` (Type: String) Used as the identifying name for all the files and folders to do with the particular call. E.g. ```--output Sample1``` will cause the output folder to be named "seqverify_Sample1"
 * ```--reads_1``` and ```--reads_2``` (Type: String/Path) The paired-read FASTA/FASTQ, or gzipped FASTA/FASTQ source files for the reads. Also accepts paths to the files if they're not in the working folder.
 * ```--genome``` (Type: String/Path) Name or path of FASTA file to be used as reference genome for the reads (e.g. [CHM13](https://github.com/marbl/CHM13#downloads)).
-* ```--markers``` (Type: String/Path) Names or paths of FASTA files containing the genomes of the markers to detect (transgened, unwanted plasmids, etc.). Accepts more than one if necessary, space-separated. Can also be left blank.
+* ```--markers``` (Type: String/Path) Names or paths of FASTA files containing the sequences of the markers to detect (transgenes, unwanted plasmids, etc.). Accepts more than one if necessary, space-separated. Can also be left blank.
 
 SeqVerify has the following optional arguments:
 ##### Performance
@@ -63,18 +63,20 @@ SeqVerify will output two folders, ```seqverify_output``` and ```seqverify_temp_
 
 ```output.pytor``` The binaries output by CNVPytor. Can be used to generate further plots of specific regions if needed (refer to CNVPytor docs)
 
-```output.global.0000.png``` The Manhattan plot of CNV across the sample as output from ```output.pytor```.
+```output.global.0000.png``` The Manhattan plot of copy number across the sample as output from ```output.pytor```.
 
-```fig_marker.png``` A CNV histogram of the marker in the genome. Default bin size is 30bp, and one histogram is output for every marker specified in ```--markers```. 
+```fig_marker.png``` A copy number histogram of the transgene in the genome. Default bin size is 30bp, and one histogram is output for every sequence specified in ```--markers```. 
 
 If KRAKEN2 analysis is being performed, the pipeline will also output the following files in ```seqverify_output```:
 
-```classified_seqs_output.kreport``` A human-readable report of the contamination detected by KRAKEN2 in text format.
+```classified_seqs_output.kreport``` A human-readable report of the microbial sequences detected by KRAKEN2 in text format. Typically species with just a few reads (<10) can be ignored, but the presence of more than this could indicate contamination.
 
-```classified_output.kraken``` The KRAKEN2 binaries used to generate the report.
+```classified_output.kraken``` The KRAKEN2 binary output files used to generate the report.
 
 ```classified_seqs_output_1.fq``` and ```classified_seqs_output_2.fq```, FASTQ files containing the sequences that were classified in the KRAKEN2 database.
 
+## Example input and output
 
+[Use the S09 to show CNV and contamination]
 
-
+[Use the PGP1_3d2 to show insertion site detection]
