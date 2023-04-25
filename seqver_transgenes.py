@@ -78,8 +78,3 @@ def chrHistograms(coveragemap, chrList):
             histogram(bins, counts, chrList[i])
         except ZeroDivisionError:
             continue
-
-#chrHistograms('magnify_S04_markers_coverage.cov', ["T2A-tdTomato","CK580_FIGLA"])
-
-bins, counts = histogramData("foo", "T2A-tdTomato")
-histogram(bins, counts, "T2A-tdTomato")
