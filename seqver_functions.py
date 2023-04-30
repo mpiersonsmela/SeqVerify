@@ -191,8 +191,3 @@ def regenerate_files(read_source,chr_list):
     os.system('samtools index magnify_regenerated_temp.bam')
     for chr in chr_list:
         os.system(f'samtools view -h magnify_regenerated_temp.bam {chr} > magnify_{chr}.sam')
-
-#data = group('magnify_test_markers_diff_chr.sam')
-#insertions = compress(data,granularity=0)
-#readout(insertions,'',min_matches=1)
-#regenerate_files('test',chr_list) #magnify_test_markers_diff_chr.sam magnify_test_markers.sam
