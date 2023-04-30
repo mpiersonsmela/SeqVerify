@@ -16,9 +16,8 @@ def region_bed(sam_header,chr_list):
     return f"{sam_header}_bed.bed"
 
 def histogramData(coveragemap, chromosome, granularity=1):
-    #os.system(f"gawk '{{if ($1 ~ /({chromosome})\>/) print $0}};' {coveragemap} > {chromosome}_coverage.cov")
-    #with open(f"{chromosome}_coverage.cov") as file:
-    with open("T2A-tdTomato_coverage.cov") as file:
+    os.system(f"gawk '{{if ($1 ~ /({chromosome})\>/) print $0}};' {coveragemap} > {chromosome}_coverage.cov")
+    with open(f"{chromosome}_coverage.cov") as file:
         bins, counts = [], []
         for line in file:
             features = line.split("\t")
@@ -38,7 +37,7 @@ def histogramData(coveragemap, chromosome, granularity=1):
     counts = [int(i)/granularity for i in counts]
     return bins,counts
 
-def histogram(bins,counts,chromosome,granularity=35,rounding=1, significant=1):
+def histogram(bins,counts,chromosome,granularity=50,rounding=1, significant=1):
     try:
         abnormal_bins, abnormal_counts = [], []
 
@@ -65,6 +64,7 @@ def histogram(bins,counts,chromosome,granularity=35,rounding=1, significant=1):
 
         plt.xlabel(f"Base Coordinate (/{granularity})")
         plt.ylabel(f"Avg. Copy Number per Bin (x{rounding})")
+        plt.xticks([])
         plt.title("Chromosome Coverage")
         fig.savefig(f'fig_{chromosome}.png')
         plt.close('all')
@@ -78,3 +78,23 @@ def chrHistograms(coveragemap, chrList):
             histogram(bins, counts, chrList[i])
         except ZeroDivisionError:
             continue
+
+def igvScreenshot(temp_folder,folder,alignments,genome,bed_file):
+    with open(f"{temp_folder}/seqverify_igv.bat","w+") as file:
+        file.write("new\n")
+        file.write(f"snapshotDirectory {folder}\n")
+        file.write(f"load {alignments}\n")
+        file.write(f"genome {genome}\n")
+        file.write(f"maxPanelHeight 500\n")
+        with open(f"{temp_folder}/{bed_file}","w+") as bed:
+            for line in bed:
+                name,begin,end = line.split("\t")
+                file.write(f"goto {name}:{begin}-{end}")
+                file.write(f"snapshot fig_{name}.png")
+        file.write("exit")
+    #os.system("xvfb-run --auto-servernum --server-num=1 java -Xmx4000m -jar bin/IGV_2.3.81/igv.jar -b seqverify_igv.bat")
+    os.system("xvfb-run --auto-servernum --server-num=1 igv -b seqverify_igv.bat")
+
+#chrHistograms('magnify_S04_markers_coverage.cov', ["T2A-tdTomato","CK580_FIGLA"])
+
+igvScreenshot("seqverify_temp_PGP1","seqverify_PGP1","seqverify_PGP1/seqverify_PGP1_markers_diff_chr.bam","	chm13v2.0.fa","seqverify_temp_PGP1/seqverify_PGP1_markers_header.sam_bed.bed")

@@ -161,8 +161,8 @@ def compress(alignment_dict, granularity=500):
                             readout_dict[reference_chromosome][aligned_chromosome][possible_location] += repetitions
     return readout_dict
 
-def readout(insertion_dict, chr_filter, min_matches=1):
-    with open("magnify_readout.txt", "w") as file:
+def readout(folder,insertion_dict, chr_filter, min_matches=1):
+    with open(f"{folder}/seqverify_readout.txt", "w") as file:
         file.write("Insertion Sites Found:\n")
         for read_chromosome, alignments in insertion_dict.items():
             file.write(read_chromosome+":\n")
