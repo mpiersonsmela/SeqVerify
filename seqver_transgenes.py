@@ -16,9 +16,8 @@ def region_bed(sam_header,chr_list):
     return f"{sam_header}_bed.bed"
 
 def histogramData(coveragemap, chromosome, granularity=1):
-    #os.system(f"gawk '{{if ($1 ~ /({chromosome})\>/) print $0}};' {coveragemap} > {chromosome}_coverage.cov")
-    #with open(f"{chromosome}_coverage.cov") as file:
-    with open("T2A-tdTomato_coverage.cov") as file:
+    os.system(f"gawk '{{if ($1 ~ /({chromosome})\>/) print $0}};' {coveragemap} > {chromosome}_coverage.cov")
+    with open(f"{chromosome}_coverage.cov") as file:
         bins, counts = [], []
         for line in file:
             features = line.split("\t")
@@ -38,7 +37,7 @@ def histogramData(coveragemap, chromosome, granularity=1):
     counts = [int(i)/granularity for i in counts]
     return bins,counts
 
-def histogram(bins,counts,chromosome,granularity=35,rounding=1, significant=1):
+def histogram(bins,counts,chromosome,granularity=50,rounding=1, significant=1):
     try:
         abnormal_bins, abnormal_counts = [], []
 
@@ -65,6 +64,7 @@ def histogram(bins,counts,chromosome,granularity=35,rounding=1, significant=1):
 
         plt.xlabel(f"Base Coordinate (/{granularity})")
         plt.ylabel(f"Avg. Copy Number per Bin (x{rounding})")
+        plt.xticks([])
         plt.title("Chromosome Coverage")
         fig.savefig(f'fig_{chromosome}.png')
         plt.close('all')
