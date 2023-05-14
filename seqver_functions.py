@@ -1,11 +1,10 @@
 import regex as re
 import os
 
-supp_tags = ['SA','XA']
-chr_list = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY', 'chrM']
-#grep A00738:415:HLNKWDSX3:2:2608:7193:18490 chm13v2.0_realigned_transgenes.sam
-#python magnify.py --reads_source S04_sorted_marked.bam --genome_source chm13v2.0.fa --marker_sources T2A-mGreenLantern.fa T2A-tdTomato.fa transposons_in_S04.fa unwanted_plasmids.fa --granularity 500 --threads 15
-def pathFinder(potential_path):
+supp_tags = ['SA','XA'] #sets the two possible optional alignments, chimeric and split respectively
+chr_list = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY', 'chrM'] #defines all human chromosomes
+
+def pathFinder(potential_path): #defines pathFinder, a function that checks if a variable is a filename or path
     if "/" in potential_path:
         path = potential_path
     else:
@@ -13,12 +12,16 @@ def pathFinder(potential_path):
     return path
 
 class SamAlignment:
-    def __init__(self, alignment): #defines all required parameters as specified in the SAM Manual to avoid dealing with slicing in future, as well as ALIGNMENT, a parameter containing the entire string, and OPTIONAL, a list containing all the optional fields
-
+    def __init__(self, alignment): 
+        #Defines all required parameters as specified in the SAM Manual to avoid dealing with slicing in future, as well as ALIGNMENT, a parameter containing the entire string, and OPTIONAL, a list containing all the optional fields
+        
+        #Whole alignment string
         self.ALIGNMENT = alignment
 
+        #temp variable
         fields = alignment.split('\t')
 
+        #SAM Headers
         self.QNAME = fields[0] 
         self.FLAG = fields[1] 
         self.RNAME = fields[2] 
@@ -56,19 +59,19 @@ class SamAlignment:
             supplementary_alignment_list = supplementary_alignment_list + [a.split(',') for a in supplementary_alignments if len(a) >= 2] #returns a list of lists of type [rname, pos, strand, CIGAR, mapQ, NM]
         return supplementary_alignment_list            
 
-    def softClippingLen(self, cigar):
+    def softClippingLen(self, cigar): #finds the length of the alignment until we hit softclipping in a string, if any, otherwise returns 0
         if "S" in cigar:
-            cigar_split = re.split('(\d+)',cigar)
-            cigar_letters = [cigar_split[i] for i in range(len(cigar_split)) if i % 2 == 0 and cigar_split[i] != ''] 
-            cigar_numbers = [cigar_split[i] for i in range(len(cigar_split)) if i % 2 == 1 and cigar_split[i] != '']
+            cigar_split = re.split('(\d+)',cigar) #splits CIGAR string by regex matching groups of one or more digits
+            cigar_letters = [cigar_split[i] for i in range(len(cigar_split)) if i % 2 == 0 and cigar_split[i] != ''] #takes the indicator letters of the CIGAR
+            cigar_numbers = [cigar_split[i] for i in range(len(cigar_split)) if i % 2 == 1 and cigar_split[i] != ''] #takes the numbers after the letters
             length = 0
-            if cigar_letters[0] == 'S':
+            if cigar_letters[0] == 'S': #if the first letter in the CIGAR denotes soft clipping, it means we do not need to adjust the read's length, so the function returns 0.
                 return 0
             else:
                 for operation_number in range(len(cigar_letters)):
                     letter = cigar_letters[operation_number]
                     number = int(cigar_numbers[operation_number])
-                    if letter in ["M","I","S","=","X"]:
+                    if letter in ["M","I","S","=","X"]: #takes all the operations that change the length of the string, sums the length of their actions until we get to the clipping
                         if letter == "S":
                             return length
                         else:
@@ -82,24 +85,24 @@ class SamAlignment:
         return [self.RNAME,int(self.POS)] #used to be just the int() statement
 
     def matePosition(self):
-        return [self.RNEXT,int(self.PNEXT)+self.softClippingLen(self.optionalTag("MC")[-1])]
+        return [self.RNEXT,int(self.PNEXT)+self.softClippingLen(self.optionalTag("MC")[-1])] #returns the position of a read's mate
 
-    def supplementaryPosition(self,tag_list=['SA','XA']): #you minus one'd the coords here to designate them
+    def supplementaryPosition(self,tag_list=['SA','XA']): #denotes where positions of supplementary alignments are exactly, given we know those are insertion sites
         positions = []
-        supplementaries = self.supplementaryAlignments(tag_list)
+        supplementaries = self.supplementaryAlignments(tag_list) #finds all supplementary alignments
         for match in supplementaries:
-            cigar = re.findall('(([0-9]+[A-Z])+)'," ".join(match[2:]))[0][0]
+            cigar = re.findall('(([0-9]+[A-Z])+)'," ".join(match[2:]))[0][0] #takes CIGAR string of the supplementary alignment
             position = match[1]
-            soft_clipping_len = self.softClippingLen(cigar)
-            if match[2] in ['-','+']:
+            soft_clipping_len = self.softClippingLen(cigar) #checks for softclipping
+            if match[2] in ['-','+']: #match[1] and match[2] deal with conflicting ways in which position is reported, namely "-+NUM" in SA and ["-+","NUM"] in XA, so this makes sure we always get the correct position
                 position = int(match[2] + str(position))
 
-            if int(position) < 0:
-                position = abs(int(position) - soft_clipping_len) #used to be a minus
+            if int(position) < 0: #adds the length of the string before any softclipping while respecting the orientation of the read
+                position = abs(int(position) - soft_clipping_len) 
             else:
                 position = int(position) + soft_clipping_len
 
-            positions.append([match[0],-1*position])
+            positions.append([match[0],-1*position]) #if a supplementary alignment is found, at the end we append its position multiplied by -1 to make sure it is not lost in granularity calculations with the non-supplementary alignments
         return positions
 
     def allPositions(self,tag_list=['SA','XA']): #returns position of the alignment, of its mate, and any supplementary alignments as a three-item list [[position],[mateposition],[supplementalaligmentposition]]
@@ -111,72 +114,72 @@ def group(samfile): #returns a dictionary containing all reference transgene chr
     alignments = {}
     with open(samfile) as sam:
         for alignment in sam:
-            if alignment.startswith("@"):
+            if alignment.startswith("@"): #skips header lines
                 continue
-            alignment = SamAlignment(alignment)
-            matches = alignment.allPositions(tag_list=supp_tags)
+            alignment = SamAlignment(alignment) #uses our SamAlignment class for ease of use
+            matches = alignment.allPositions(tag_list=supp_tags) #finds all supplementary alignments in the read
             ref_chromosome = matches[0][0] #takes name of ref chromosome
             mates_and_supplementaries = matches[1:] #takes positions of all matches and excludes the original read (we don't care where the read maps to on the original chromosome)
-            try:
-                chromosome_dict = alignments[ref_chromosome]
+            try: #dictionary logic
+                chromosome_dict = alignments[ref_chromosome] #initializes chromosome_dict to the reference chromosome entry, if it exists
                 for position in mates_and_supplementaries:
                     aligned_chrm_name = position[0]
                     try:
                         try:
-                            chromosome_dict[aligned_chrm_name][position[1]] += 1 #there used to be an abs here
+                            chromosome_dict[aligned_chrm_name][position[1]] += 1 
                         except:
-                            chromosome_dict[aligned_chrm_name][position[1]] = 1 #abs here
+                            chromosome_dict[aligned_chrm_name][position[1]] = 1 
                     except KeyError:
-                        chromosome_dict[aligned_chrm_name] = {position[1]:1}  #abs here
+                        chromosome_dict[aligned_chrm_name] = {position[1]:1} 
             except KeyError:
-                alignments[ref_chromosome] = {}
-                new_chromosomes = list(set([position[0] for position in mates_and_supplementaries]))
-                for chromosome in new_chromosomes:
+                alignments[ref_chromosome] = {} #if the reference chromosome hasn't been seen yet, creates a new entry
+                new_chromosomes = list(set([position[0] for position in mates_and_supplementaries])) #adds all the new chromosomes that have reads aligned to the reference chromosome in this alignment
+                for chromosome in new_chromosomes: #initializes all of them to be empty
                     alignments[ref_chromosome][chromosome] = {}
                 for position in mates_and_supplementaries: #if there is no dict for the chromosome the sequence aligns to, it creates one. this for loop is necessary as to not discard the information in that alignment
                     try:
-                        alignments[ref_chromosome][position[0]][position[1]] += 1
+                        alignments[ref_chromosome][position[0]][position[1]] += 1 
                     except:
                         alignments[ref_chromosome][position[0]][position[1]] = 1
     return alignments
 
-def compress(alignment_dict, granularity=500):
-    readout_dict = {}
+def compress(alignment_dict, granularity=500): #compresses the alignments to the desired granularity
+    readout_dict = {} #initializes final dictionary as empty
     for reference_chromosome, alignments in alignment_dict.items():
         readout_dict[reference_chromosome] = {}
         for aligned_chromosome, alignment_data in alignments.items():
             readout_dict[reference_chromosome][aligned_chromosome] = {}
             for location, repetitions in alignment_data.items():
                 saved_locations = readout_dict[reference_chromosome][aligned_chromosome].keys()
-                distances = [abs(location - saved_location) for saved_location in saved_locations]
-                above_granularity = [distance >= granularity for distance in distances]
-                if all(above_granularity):
+                distances = [abs(location - saved_location) for saved_location in saved_locations] #lines 148-154 cycle through the dictionary and copy its hierarchy, then finds the distances between a point and every other point for all points
+                above_granularity = [distance >= granularity for distance in distances] #returns a list of true/false values whether a point is far enough that it needs to be in a different bin from the others
+                if all(above_granularity): #if the point is far enough from all of them to be put into their bin, then...
                     try:
-                        readout_dict[reference_chromosome][aligned_chromosome][location] += repetitions
+                        readout_dict[reference_chromosome][aligned_chromosome][location] += repetitions #...adds to a new bin or creates one
                     except KeyError:
                         readout_dict[reference_chromosome][aligned_chromosome][location] = repetitions
                 else:
                     for possible_location, repetition in readout_dict[reference_chromosome][aligned_chromosome].items():
-                        if abs(possible_location - location) < granularity:
+                        if abs(possible_location - location) < granularity: #if the point is at least close enough to one point to be put in its bin, finds which point it is and adds it to it.
                             readout_dict[reference_chromosome][aligned_chromosome][possible_location] += repetitions
     return readout_dict
 
 def readout(folder,insertion_dict, chr_filter, min_matches=1):
-    with open(f"{folder}/seqverify_readout.txt", "w") as file:
-        file.write("Insertion Sites Found:\n")
+    with open(f"{folder}/seqverify_readout.txt", "w") as file: #makes new readout file
+        file.write("Insertion Sites Found:\n") #boilerplate formatting
         for read_chromosome, alignments in insertion_dict.items():
-            file.write(read_chromosome+":\n")
+            file.write(read_chromosome+":\n") #inserts reference transgene first
             for align_chr, sites in alignments.items():
                 if align_chr in chr_filter:
-                    continue
+                    continue #if the chromosome it aligns to is one we indicated we don't want (usually other transgenes, since due to repetitive DNA they clutter the readout), bins it and continues
                 else:
-                    file.write('\t'+align_chr+":\n")
+                    file.write('\t'+align_chr+":\n") #adds the chromosome where insertion sites from the reference transgene were found
                     for site, repetitions in sites.items():
                         if repetitions >= min_matches:
                             if str(site)[0] == '-':
-                                file.write('\t'+'\t'+str(site)[1:]+" (Chimeric/Split Read): "+str(repetitions)+" matched\n")
+                                file.write('\t'+'\t'+str(site)[1:]+" (Chimeric/Split Read): "+str(repetitions)+" matched\n") #adds chimeric reads and their location
                             else:
-                                file.write('\t'+'\t'+str(site)+": "+str(repetitions)+" matched\n")
+                                file.write('\t'+'\t'+str(site)+": "+str(repetitions)+" matched\n") #adds nonchimeric (potentially non-exaxt insertion sites) and their location
                         else:
                             continue
 
@@ -191,8 +194,3 @@ def regenerate_files(read_source,chr_list):
     os.system('samtools index magnify_regenerated_temp.bam')
     for chr in chr_list:
         os.system(f'samtools view -h magnify_regenerated_temp.bam {chr} > magnify_{chr}.sam')
-
-#data = group('magnify_test_markers_diff_chr.sam')
-#insertions = compress(data,granularity=0)
-#readout(insertions,'',min_matches=1)
-#regenerate_files('test',chr_list) #magnify_test_markers_diff_chr.sam magnify_test_markers.sam
