@@ -87,6 +87,7 @@ Example of the KRAKEN report showing Mycoplasm contamination in the same sample:
 
 Example of insertion site detection, with tdTomato being found in chromosome 5 of a different sample, and possibly other transgenes (even though given the low number of matches it is more likely they are false positives due to repetitive DNA):
 
-![contamination](https://github.com/mpiersonsmela/SeqVerify/assets/20324516/4a9ebc62-95ec-4ac6-b58c-4cafc12f7cc0)
+![insertion](https://github.com/mpiersonsmela/SeqVerify/assets/20324516/5010a769-ca21-4b59-a3c2-bfab12b6b234)
+
 
 
