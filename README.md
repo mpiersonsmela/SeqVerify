@@ -16,7 +16,7 @@ SeqVerify is a Python-based command line tool for analysis of whole genome seque
 ### Install through bioconda
 
 ```
-> conda install -c bioconda seqverify
+conda install -c bioconda seqverify
 ```
 
 ## Usage
@@ -77,6 +77,16 @@ If KRAKEN2 analysis is being performed, the pipeline will also output the follow
 
 ## Example input and output
 
-[Use the S09 to show CNV and contamination]
+Example of WGS data with copy number abnormalities at the beginning of chromosome 9 (CNVPytor Manhattan plot):
 
-[Use the PGP1_3d2 to show insertion site detection]
+![S09_CNV](https://github.com/mpiersonsmela/SeqVerify/assets/20324516/8394f684-c384-4e44-9758-5019443747dd)
+
+Example of the KRAKEN report showing Mycoplasm contamination in the same sample:
+
+![contamination](https://github.com/mpiersonsmela/SeqVerify/assets/20324516/a66666d5-8c4a-4fb8-86b3-3811ffcebb46)
+
+Example of insertion site detection, with tdTomato being found in chromosome 5 of a different sample, and possibly other transgenes (even though given the low number of matches it is more likely they are false positives due to repetitive DNA):
+
+![contamination](https://github.com/mpiersonsmela/SeqVerify/assets/20324516/4a9ebc62-95ec-4ac6-b58c-4cafc12f7cc0)
+
+
