@@ -77,7 +77,7 @@ If KRAKEN2 analysis is being performed, the pipeline will also output the follow
 
 ## Example input and output
 
-Example of WGS data with copy number abnormalities at the beginning of chromosome 9 (CNVPytor Manhattan plot):
+Example of WGS data with copy number abnormalities at the beginning of chromosome 12 (CNVPytor Manhattan plot):
 
 ![S09_CNV](https://github.com/mpiersonsmela/SeqVerify/assets/20324516/8394f684-c384-4e44-9758-5019443747dd)
 
