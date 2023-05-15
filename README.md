@@ -16,7 +16,7 @@ SeqVerify is a Python-based command line tool for analysis of whole genome seque
 ### Install through bioconda
 
 ```
-> hello, world!
+> conda install -c bioconda seqverify
 ```
 
 ## Usage
