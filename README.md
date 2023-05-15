@@ -24,7 +24,7 @@ conda install -c bioconda seqverify
 An example SeqVerify call can be found below:
 
 ```
-seqverify.py --output output_name --reads_1 sample_1.fastq --reads_2 sample_2.fastq --genome genome.fa --marker_sources transgenes.fa --database db8gb
+seqverify --output output_name --reads_1 sample_1.fastq --reads_2 sample_2.fastq --genome genome.fa --marker_sources transgenes.fa --database db8gb
 ```
 
 ### Anatomy of a SeqVerify call
@@ -88,6 +88,21 @@ Example of the KRAKEN report showing Mycoplasm contamination in the same sample:
 Example of insertion site detection, with tdTomato being found in chromosome 5 of a different sample, and possibly other transgenes (even though given the low number of matches it is more likely they are false positives due to repetitive DNA):
 
 ![insertion](https://github.com/mpiersonsmela/SeqVerify/assets/20324516/5010a769-ca21-4b59-a3c2-bfab12b6b234)
+
+## Tutorial
+
+After installing SeqVerify from Bioconda, a user will need to assemble the following files to run it:
+* Genome sequencing reads, in separated forward and backward FASTQ/FASTA files. SAM format files can be separated using a command like ```samtools fastq``` and then used for the pipeline. These will be referred to as ```r1.fq``` and ```r2.fq```.
+* Reference genome, in FASTA format: the pipeline was mainly developed for [CHM13](https://github.com/marbl/CHM13#downloads), but older genomes such as [HG38](https://www.ncbi.nlm.nih.gov/datasets/genome/GCF_000001405.40/) were also tested with good results. This will be referred to as ```genome.fa```.
+* Transgene/Marker genome(s), in FASTA format. This tutorial will use two transgenes (even though any number can be used), which will be referred to as ```transgene1.fa``` and ```transgene2.fa```.
+* (If KRAKEN is enabled) A valid KRAKEN2 database. More information about how to make a valid KRAKEN2 database can be found [here](https://github.com/DerrickWood/kraken2/blob/master/docs/MANUAL.markdown#kraken-2-databases). 
+
+The user should then pick a directory to run the pipeline in, from which they will run the commandline utility. This will create two folders inside of it, the output folder and the temp folder (the latter of which will be deleted by default). 
+
+```seqverify --output output_name --reads_1 sample_1.fastq --reads_2 sample_2.fastq --genome genome.fa --marker_sources transgenes.fa --database db8gb```
+
+
+
 
 
 
