@@ -91,18 +91,30 @@ Example of insertion site detection, with tdTomato being found in chromosome 5 o
 
 ## Tutorial
 
-After installing SeqVerify from Bioconda, a user will need to assemble the following files to run it:
+After installing SeqVerify from Bioconda, you will need to assemble the following files to run it:
 * Genome sequencing reads, in separated forward and backward FASTQ/FASTA files. SAM format files can be separated using a command like ```samtools fastq``` and then used for the pipeline. These will be referred to as ```r1.fq``` and ```r2.fq```.
 * Reference genome, in FASTA format: the pipeline was mainly developed for [CHM13](https://github.com/marbl/CHM13#downloads), but older genomes such as [HG38](https://www.ncbi.nlm.nih.gov/datasets/genome/GCF_000001405.40/) were also tested with good results. This will be referred to as ```genome.fa```.
 * Transgene/Marker genome(s), in FASTA format. This tutorial will use two transgenes (even though any number can be used), which will be referred to as ```transgene1.fa``` and ```transgene2.fa```.
 * (If KRAKEN is enabled) A valid KRAKEN2 database. More information about how to make a valid KRAKEN2 database can be found [here](https://github.com/DerrickWood/kraken2/blob/master/docs/MANUAL.markdown#kraken-2-databases). 
 
-The user should then pick a directory to run the pipeline in, from which they will run the commandline utility. This will create two folders inside of it, the output folder and the temp folder (the latter of which will be deleted by default). 
+You should then pick a directory to run the pipeline in, from which you'll call the ```seqverify``` command. This will create two folders inside of it, the output folder and the temp folder (the latter of which will be deleted by default). 
 
-```seqverify --output output_name --reads_1 sample_1.fastq --reads_2 sample_2.fastq --genome genome.fa --marker_sources transgenes.fa --database db8gb```
+```seqverify --output output_name --reads_1 r1.fastq --reads_2 r2.fastq --genome genome.fa --marker_sources transgene1.fa transgene2.fa (--kraken True --database database)```
 
+The pipeline will then run: this will usually take a few hours, with the most time-intensive steps being BWA alignment and genome indexing. The output files as described above will be output in the output folder, and everything else in the temp folder will be deleted unless ```--del_temp``` is set to ```F```.
 
+#### Core optimization
 
+If you are running SeqVerify on a cluster or other powerful machine, you may be interested in optimizing the usage of the cores you use at one. This is where the ```--start``` flag becomes useful: instead of scheduling one ```seqverify``` command as shown above, you can call two, one with ```--start 0``` and a subsequent one with ```--start 2``` to split up the single-threaded and multi-threaded portions of the pipeline. The rest of the arguments should be able to remain the same, such that the two commands you call are:
 
+```seqverify --output output_name --reads_1 r1.fastq --reads_2 r2.fastq --genome genome.fa --marker_sources transgene1.fa transgene2.fa (--kraken True --database database) --start 0```
+
+```seqverify --output output_name --reads_1 r1.fastq --reads_2 r2.fastq --genome genome.fa --marker_sources transgene1.fa transgene2.fa (--kraken True --database database) --threads T --start 2```
+
+Where ```T``` is the number of threads available for the multi-threaded portion.
+
+#### Cohort 
+
+If you are running SeqVerify on multiple samples with the same underlying genome and transgene markers, you can use the ```--start 0``` option combined with ```--del_temp F``` to run the pipeline up to indexing the new genome, to then halt it, manually go into the temp folder, and copy-paste the reference genome and its index into new manually created temp folders for the other samples (making sure the naming convention matches the one described in the main ```seqverify``` file). You will then be able to run ```--start 2``` for all the other samples and skip genome indexing, saving repetitive operations, time, and compute.
 
 
