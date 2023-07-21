@@ -1,8 +1,7 @@
-import regex as re
+import re
 import os
 
 supp_tags = ['SA','XA'] #sets the two possible optional alignments, chimeric and split respectively
-chr_list = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY', 'chrM'] #defines all human chromosomes
 
 def pathFinder(potential_path): #defines pathFinder, a function that checks if a variable is a filename or path
     if "/" in potential_path:
@@ -183,14 +182,4 @@ def readout(folder,insertion_dict, chr_filter, min_matches=1):
                         else:
                             continue
 
-def regenerate_files(read_source,chr_list):
-    source_name = f'magnify_{read_source}_markers_diff_chr.sam'
-    source_reads = f'magnify_{read_source}_markers.sam'
-    os.system(f"samtools view -H {source_reads} >> magnify_regenerated_temp.sam")
-    with open(source_name) as sam:
-        read_names = "|".join([SamAlignment(alignment).QNAME for alignment in sam])
-        os.system(f"grep -E '{read_names}' {source_reads} >> magnify_regenerated_temp.sam")
-    os.system('samtools sort magnify_regenerated_temp.sam > magnify_regenerated_temp.bam')
-    os.system('samtools index magnify_regenerated_temp.bam')
-    for chr in chr_list:
-        os.system(f'samtools view -h magnify_regenerated_temp.bam {chr} > magnify_{chr}.sam')
+

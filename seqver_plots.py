@@ -2,18 +2,27 @@
 import os
 import matplotlib.pyplot as plt
 
-def region_bed(temp_folder,sam_header,chr_list): #Generates .bed file necessary for running the other functions
-    with open(f"{temp_folder}/{sam_header}_bed.bed","w") as bed: #Creates a new bed file
-        with open(f"{sam_header}") as file:
-            for line in file:
-                tags = line.split("\t") #Parses the file line-by-line, finding each tab-separated tag.
-                if tags[0] == '@SQ': #Collects all sequence/chromosome lines in the header
-                    chr_name = tags[1].split(":")[1] #Takes the chromosome/transgene's name
-                    if chr_name in chr_list: #Excludes all the names we don't want (i.e. usually all the human non-transgene chromosomes)
-                        end = int(tags[2].split(":")[1])-1 #Calculates 0-indexed final coordinate of transgene (SAM files are 1-indexed, .bed files are )
-                        bed.write(f"{chr_name}\t0\t{end}\n") #Writes the coordinates to the file
-                else:
-                    continue
+def region_bed(temp_folder,sam_header,chr_list,output): #Generates .bed file necessary for running the other functions
+    with open(f"{temp_folder}/{output}.bed","a") as bed: #Creates a new bed file
+        try:
+            with open(f"{temp_folder}/{sam_header}") as file:
+                for line in file:
+                    tags = line.split("\t") #Parses the file line-by-line, finding each tab-separated tag.
+                    if tags[0] == '@SQ': #Collects all sequence/chromosome lines in the header
+                        chr_name = tags[1].split(":")[1] #Takes the chromosome/transgene's name
+                        if chr_name in chr_list: #Excludes all the names we don't want (i.e. usually all the human non-transgene chromosomes)
+                            end = int(tags[2].split(":")[1])-1 #Calculates 0-indexed final coordinate of transgene (SAM files are 1-indexed, .bed files are )
+                            bed.write(f"{chr_name}\t0\t{end}\n") #Writes the coordinates to the file
+                    else:
+                        continue
+        except FileNotFoundError:
+            for command in sam_header:
+                fields = str(command).split("\t")
+                chr, start, seq = fields[0].split(":")[0], fields[0].split(":")[1].split("-")[0], len(fields[1])
+                bed.write(f"{chr}\t{start}\t{int(start)+int(seq)}\n")
+
+
+
     return f"{sam_header}_bed.bed"
 
 def histogramData(coveragemap, chromosome, granularity=1): #Collects data to make a single histogram if IGV is not used
@@ -88,10 +97,10 @@ def igvScreenshot(temp_folder,folder,alignments,genome,bed_file): #If using IGV,
         file.write(f"load {alignments}\n") #loads the bam file
         file.write(f"genome {genome}\n") #loads the genome
         file.write(f"maxPanelHeight 500\n") #boilerplate code for adjustment of the screen size
-        with open(f"{temp_folder}/{bed_file}","w+") as bed: #writes instructions to take a screenshot of every transgene in the bed file
+        with open(f"{temp_folder}/{bed_file}","r") as bed: #writes instructions to take a screenshot of every transgene in the bed file
             for line in bed:
                 name,begin,end = line.split("\t")
-                file.write(f"goto {name}:{begin}-{end}") #makes IGV go to the entire transgene
-                file.write(f"snapshot fig_{name}.png") #takes screenshot and saves it
+                file.write(f"goto {name}:{begin}-{end}\n") #makes IGV go to the entire transgene
+                file.write(f"snapshot fig_{name}.png\n") #takes screenshot and saves it
         file.write("exit") #boilerplate
     os.system("xvfb-run --auto-servernum --server-num=1 igv -b seqverify_igv.bat") #runs XVFB, a headerless server emulator, to run IGV automatically without the need for a GUI.
