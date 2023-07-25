@@ -10,16 +10,17 @@ from seqver_lofFinder import *
 parser = argparse.ArgumentParser()
 
 #Sample call:
-#seqverify --output S04 --reads_1 S04_1.fastq --reads_2 S04_2.fastq --genome chm13v2.0.fa --markers T2A-mGreenLantern.fa T2A-tdTomato.fa transposons_in_S04.fa unwanted_plasmids.fa --granularity 500 --threads 15
+#seqverify --output S04 --reads_1 S04_1.fastq --reads_2 S04_2.fastq --genome chm13v2.0.fa --inexact T2A-mGreenLantern.fa T2A-tdTomato.fa transposons_in_S04.fa unwanted_plasmids.fa --granularity 500 --threads 15
 
-#seqverify --output c5 --reads_1 chr5_1.fastq --reads_2 chr5_2.fastq --genome chr5_original.fa  --markers commands.txt --threads 15 --max_mem 8G
+#seqverify --output c5 --reads_1 chr5_1.fastq --reads_2 chr5_2.fastq --genome chr5_original.fa  --exact commands.txt --threads 15 --max_mem 8G
 
 #Parses commandline arguments:
 #Main arguments
 parser.add_argument('--output', type=str, required=True)
 parser.add_argument('--reads_1', type=str, required=True)
 parser.add_argument('--reads_2', type=str, required=True)
-parser.add_argument('--markers', type=str, required=False, nargs='+')
+parser.add_argument('--inexact', type=str, required=False, nargs='+')
+parser.add_argument('--exact', type=str, required=False)
 parser.add_argument('--del_temp', action='store_const',const=True, required=False, default=False)
 
 #Genome arguments
@@ -54,7 +55,8 @@ reads_1_path = pathFinder(args.reads_1)
 reads_2_path = pathFinder(args.reads_2)
 genome_source_path = pathFinder(args.genome)
 
-marker_sources_path = [pathFinder(i) for i in args.markers]
+marker_sources_path = [pathFinder(i) for i in args.inexact]
+exact_path = pathFinder(args.exact)
 
 granularity_threshold = args.granularity
 if args.database != None:
@@ -107,14 +109,12 @@ if args.start == 0 or args.start == 1:
 
     #Automatic Preparation of Collated Genome:
     #Collates all markers/transgenes into a single FASTA file for ease of handling
-    exact = [i for i in marker_sources_path if i.split(".")[1] == "txt"]
 
-    if exact != []:
-        command_file_name = marker_sources_path.pop(marker_sources_path.index(exact[0]))
-        commands = commandHandler(genome_source_path,command_file_name,temp_folder,genome_with_markers)
+    if exact_path != None:
+        commands = commandHandler(genome_source_path,exact_path,temp_folder,genome_with_markers)
     
     if marker_sources_path != []:
-        if exact == []:
+        if exact_path == None:
             #Copies the reference genome into a new FASTA file that the transgenes will also be added to
             os.system(f'cp {genome_source_path} {temp_folder}/{genome_with_markers}')
 
@@ -132,7 +132,7 @@ if args.start == 0 or args.start == 2:
     #Beginning of multithreaded part:
 
     #Aligns the new genome using BWA-MEM
-    #os.system(f'bwa mem -M -t {threads} {temp_folder}/{genome_with_markers} {reads_1_path} {reads_2_path} > {temp_folder}/{aligned_with_markers}')
+    os.system(f'bwa mem -M -t {threads} {temp_folder}/{genome_with_markers} {reads_1_path} {reads_2_path} > {temp_folder}/{aligned_with_markers}')
   
     if marker_sources_path != []:
         #Saves all names of transgenes/markers we want to find insertion sites of into a list for later usage and makes it into a string
