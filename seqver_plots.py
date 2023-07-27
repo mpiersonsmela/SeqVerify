@@ -3,7 +3,8 @@ import os
 import matplotlib.pyplot as plt
 
 def region_bed(temp_folder,sam_header,chr_list,output): #Generates .bed file necessary for running the other functions
-    with open(f"{temp_folder}/{output}.bed","a") as bed: #Creates a new bed file
+    bed_name = f"{output}.bed"
+    with open(f"{temp_folder}/{bed_name}","a") as bed: #Creates a new bed file
         try:
             with open(f"{temp_folder}/{sam_header}") as file:
                 for line in file:
@@ -21,9 +22,7 @@ def region_bed(temp_folder,sam_header,chr_list,output): #Generates .bed file nec
                 chr, start, seq = fields[0].split(":")[0], fields[0].split(":")[1].split("-")[0], len(fields[1])
                 bed.write(f"{chr}\t{start}\t{int(start)+int(seq)}\n")
 
-
-
-    return f"{sam_header}_bed.bed"
+    return bed_name
 
 def histogramData(coveragemap, chromosome, granularity=1): #Collects data to make a single histogram if IGV is not used
     os.system(f"gawk '{{if ($1 ~ /({chromosome})\>/) print $0}};' {coveragemap} > {chromosome}_coverage.cov") #gawks the output of samtools depth -b for the reads relevant to the chromosome
