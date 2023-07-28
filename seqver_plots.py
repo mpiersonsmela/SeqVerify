@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 def region_bed(temp_folder,sam_header,chr_list,output): #Generates .bed file necessary for running the other functions
     bed_name = f"{output}.bed"
-    with open(f"{temp_folder}/{bed_name}","a") as bed: #Creates a new bed file
+    with open(f"{temp_folder}/{bed_name}","a") as bed:
         try:
             with open(f"{temp_folder}/{sam_header}") as file:
                 for line in file:
@@ -93,8 +93,8 @@ def igvScreenshot(temp_folder,folder,alignments,genome,bed_file): #If using IGV,
     with open(f"{temp_folder}/seqverify_igv.bat","w+") as file: #Autogenerates an IGV-compatible bat file we will use later to screenshot the relevant parts
         file.write("new\n") #boilerplate code
         file.write(f"snapshotDirectory {folder}\n") #sets the folder for the screenshots
-        file.write(f"load {alignments}\n") #loads the bam file
         file.write(f"genome {genome}\n") #loads the genome
+        file.write(f"load {alignments}\n") #loads the bam file
         file.write(f"maxPanelHeight 500\n") #boilerplate code for adjustment of the screen size
         with open(f"{temp_folder}/{bed_file}","r") as bed: #writes instructions to take a screenshot of every transgene in the bed file
             for line in bed:
@@ -102,4 +102,4 @@ def igvScreenshot(temp_folder,folder,alignments,genome,bed_file): #If using IGV,
                 file.write(f"goto {name}:{begin}-{end}\n") #makes IGV go to the entire transgene
                 file.write(f"snapshot fig_{name}.png\n") #takes screenshot and saves it
         file.write("exit") #boilerplate
-    os.system("xvfb-run --auto-servernum --server-num=1 igv -b seqverify_igv.bat") #runs XVFB, a headerless server emulator, to run IGV automatically without the need for a GUI.
+    os.system(f"xvfb-run --auto-servernum --server-num=1 igv -b {temp_folder}/seqverify_igv.bat") #runs XVFB, a headerless server emulator, to run IGV automatically without the need for a GUI.
