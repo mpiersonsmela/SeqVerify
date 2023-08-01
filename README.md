@@ -10,6 +10,7 @@ SeqVerify is a Python-based command line tool for analysis of whole genome seque
 * CNVPytor >=1.3
 * Kraken2 >= 2.0
 * Matplotlib >= 2.2
+* IGV >= 2.4
 * BCFtools
 
 ### Install through bioconda
