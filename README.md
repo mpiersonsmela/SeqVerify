@@ -5,8 +5,6 @@ SeqVerify is a Python-based command line tool for analysis of whole genome seque
 
 ### Dependencies
 * Python >=3.9
-  * Regex
-  * Argparse
 * SAMtools >=1.14
 * BWA >=0.7
 * CNVPytor >=1.3
@@ -24,16 +22,17 @@ conda install -c bioconda seqverify
 An example SeqVerify call can be found below:
 
 ```
-seqverify --output output_name --reads_1 sample_1.fastq --reads_2 sample_2.fastq --genome genome.fa --marker_sources transgenes.fa --database db8gb
+seqverify --output output_name --reads_1 sample_1.fastq --reads_2 sample_2.fastq --genome genome.fa --inexact transgenes.fa --exact commands.txt --database db8gb
 ```
 
 ### Anatomy of a SeqVerify call
 
-SeqVerify has the following required arguments:
+SeqVerify has the following standard arguments:
 * ```--output``` (Type: String) Used as the identifying name for all the files and folders to do with the particular call. E.g. ```--output Sample1``` will cause the output folder to be named "seqverify_Sample1"
 * ```--reads_1``` and ```--reads_2``` (Type: String/Path) The paired-read FASTA/FASTQ, or gzipped FASTA/FASTQ source files for the reads. Also accepts paths to the files if they're not in the working folder.
 * ```--genome``` (Type: String/Path) Name or path of FASTA file to be used as reference genome for the reads (e.g. [CHM13](https://github.com/marbl/CHM13#downloads)).
-* ```--markers``` (Type: String/Path) Names or paths of FASTA files containing the sequences of the markers to detect (transgenes, unwanted plasmids, etc.). Accepts more than one if necessary, space-separated. Can also be left blank.
+* ```--inexact``` (Type: String/Path) Names or paths of FASTA files containing the sequences of the markers to detect (transgenes, unwanted plasmids, etc.). Accepts more than one if necessary, space-separated. Can also be left blank; not mutually exclusive with ```--exact```. 
+* ```--exact``` (Type: String/Path) Name or path to a valid command file for insertion of markers where the insertion site is known. Further details on the construction of a valid command files are given below. Only accepts one command file (but a command file can have multiple commands, so this will not restrict analysis). Can be left blank; not mutually exclusive with ```--inexact```. 
 
 SeqVerify has the following optional arguments:
 ##### Performance
@@ -47,7 +46,11 @@ SeqVerify has the following optional arguments:
 * ```--granularity``` (Type: Integer) Determines how large (in bp) insertion site bins are, i.e. how far apart two insertions can be in order to count as the same insertion site. Set by default to 500, a value of 1 means all insertions on different coordinates will be counted as different insertion sites and show up separately on the readout.
 * ```--min_matches``` (Type: Integer) Determines the minimum number of matches/insertions required for an insertion site to appear on the readout. Set by default to 1, i.e. shows any insertion, some of which may be false positives due to repetitive DNA or similar variables.
 ##### CNVPytor
-* ```--bin_size``` (Type: Integer) Determines how many bp are binned together for the purposes of copy number variation detection. Default is 100000, the minimum value is 1, but anything below the original read length (1500 in the test data) will yield meaningless data.
+* ```--bin_size``` (Type: Integer) Determines how many bp are binned together for the purposes of copy number variation detection. Default is 100000 (resulting in 100kbp bins), the minimum value is 1, but anything below the original read length (150 in the test data) will yield meaningless data.
+##### Other
+* ```--del_temp``` If enabled, deletes the temporary files created during the pipeline's execution. It is on by default, and highly recommended, since temp files can reach upwards of 50-100GB depending on the read coverage.
+* ```--download_defaults``` If enabled, downloads the default genomes and databases to the working directory: [T2T-CHM13v2.0](https://github.com/marbl/CHM13#analysis-set), intended to be used in ```--genome```, [GRCh38/hg38](https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/latest/) for variant calling, and the [8GB PlusPFP](https://benlangmead.github.io/aws-indexes/k2) KRAKEN2 database (placed in a new folder named seqverify_database). Kills the program after downloading these.
+
 
 ## Output
 
