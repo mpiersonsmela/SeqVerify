@@ -1,5 +1,5 @@
 # SeqVerify
-SeqVerify is a Python-based command line tool for analysis of whole genome sequencing data for gene-editing verification. It performs insertion site detection, copy number variation (CNV) analysis through CNVPytor, and bacterial contamination detection through KRAKEN2 and BRACKEN.
+SeqVerify is a Python-based command line tool for analysis of whole genome sequencing data for gene-editing verification. It performs insertion site detection, copy number variation (CNV) analysis through CNVPytor, bacterial contamination detection through KRAKEN2 and BRACKEN, and variant calling and filtering aided by SnpEff and SnpSift.
 
 ## Install
 
@@ -10,6 +10,7 @@ SeqVerify is a Python-based command line tool for analysis of whole genome seque
 * CNVPytor >=1.3
 * Kraken2 >= 2.0
 * Matplotlib >= 2.2
+* BCFtools
 
 ### Install through bioconda
 
@@ -40,13 +41,17 @@ SeqVerify has the following optional arguments:
 * ```--max_mem``` (Type: String) Determines what the maximum amount of memory to be used in the indexing of the reference genome should be. Expects an integer followed by "M" or "G" (case-sensitive) for "Megabytes" or "Gigabytes" respectively. Set by default to "16G", 16 Gigabytes.
 * ```--start``` (Type: Integer) For core-usage optimization. If set to 1, runs the entire pipeline from the start. If set to 0, only runs the single-threaded parts of the pipeline (i.e. up to and including the indexing of the reference genome, but stopping after that). If set to 2, only runs the multi-threaded parts of the pipeline (i.e. assumes the reference genome is already indexed and continues from there). Set to 1 by default, the logic behind this argument being that, where core optimization may be desirable, the pipeline can be split up into two commands, one that just requests a single thread, and one that requests multiple. Additionally, if one is using the same reference chromosome and markers for multiple samples, it is useless to re-index the genome every time, so setting 0 can be run once for the entire cohort, and setting 2 can be run after that for each individual sample.
 ##### KRAKEN2
-* ```--kraken``` (Type: String/Boolean) Determines if KRAKEN2 analysis is to be performed on the sample or not. Set to False by default, if set to True requires ```--database``` option in order to work correctly.
-* ```--database``` (Type: String/Path) Path to valid KRAKEN2 database, or, if KRAKEN2 environmental variables are set, the name of the database. Only needed if ```--kraken``` set to True. No default setting.
+* ```--kraken``` Determines if KRAKEN2 analysis is to be performed on the sample or not. If set, requires ```--database``` option in order to work correctly.
+* ```--database``` (Type: String/Path) Path to valid KRAKEN2 database, or, if KRAKEN2 environmental variables are set, the name of the database. Only needed if ```--kraken``` set. No default setting.
 ##### Insertion Site Detection
 * ```--granularity``` (Type: Integer) Determines how large (in bp) insertion site bins are, i.e. how far apart two insertions can be in order to count as the same insertion site. Set by default to 500, a value of 1 means all insertions on different coordinates will be counted as different insertion sites and show up separately on the readout.
 * ```--min_matches``` (Type: Integer) Determines the minimum number of matches/insertions required for an insertion site to appear on the readout. Set by default to 1, i.e. shows any insertion, some of which may be false positives due to repetitive DNA or similar variables.
 ##### CNVPytor
 * ```--bin_size``` (Type: Integer) Determines how many bp are binned together for the purposes of copy number variation detection. Default is 100000 (resulting in 100kbp bins), the minimum value is 1, but anything below the original read length (150 in the test data) will yield meaningless data.
+* ```--manual_plots``` Turns off IGV screenshots for coverage plots of transgenes, uses an internal matplotlib script instead. 
+##### Variant Calling
+* ```--variant_calling``` Turns on the variant calling portion of the pipeline, and takes three space-separated arguments: the name/path of a genome compatible with the VCF annotation DB used (e.g. hg38 for ClinVar), the path to the snpEff config file, and the name/path to a valid annotation DB (e.g. ClinVar)
+* ```--variant_intensity``` (Type: String) Includes all variants at or above a certain severity level in the final variant readout. Can be set to (lowest) "MODIFIER", "LOW", "MODERATE", or "HIGH" (highest). Set to "MODERATE" by default.
 ##### Other
 * ```--del_temp``` If enabled, deletes the temporary files created during the pipeline's execution. It is on by default, and highly recommended, since temp files can reach upwards of 50-100GB depending on the read coverage.
 * ```--download_defaults``` If enabled, downloads the default genomes and databases to the working directory: [T2T-CHM13v2.0](https://github.com/marbl/CHM13#analysis-set), intended to be used in ```--genome```, [GRCh38/hg38](https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/latest/) for variant calling, and the [8GB PlusPFP](https://benlangmead.github.io/aws-indexes/k2) KRAKEN2 database (placed in a new folder named seqverify_database). Kills the program after downloading these.
