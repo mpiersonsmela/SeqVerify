@@ -39,7 +39,7 @@ SeqVerify has the following optional arguments:
 ##### Performance
 * ```--threads``` (Type: Integer) Determines how many CPU threads are used in the multithreaded portion of the pipeline. Set to 1 by default.
 * ```--max_mem``` (Type: String) Determines what the maximum amount of memory to be used in the indexing of the reference genome should be. Expects an integer followed by "M" or "G" (case-sensitive) for "Megabytes" or "Gigabytes" respectively. Set by default to "16G", 16 Gigabytes.
-* ```--start``` (Type: Integer) For core-usage optimization. If set to 1, runs the entire pipeline from the start. If set to 0, only runs the single-threaded parts of the pipeline (i.e. up to and including the indexing of the reference genome, but stopping after that). If set to 2, only runs the multi-threaded parts of the pipeline (i.e. assumes the reference genome is already indexed and continues from there). Set to 1 by default, the logic behind this argument being that, where core optimization may be desirable, the pipeline can be split up into two commands, one that just requests a single thread, and one that requests multiple. Additionally, if one is using the same reference chromosome and markers for multiple samples, it is useless to re-index the genome every time, so setting 0 can be run once for the entire cohort, and setting 2 can be run after that for each individual sample.
+* ```--start``` (Type: Integer) Designed to optimize core usage. Valid values are 0,1,2. 0, the default value, runs the entire pipeline. 1 runs only the single-threaded portions of the pipeline (up to indexing the modified genome), 2 runs only the multi-threaded portions of the pipeline (aligning the new genome onwards). Use cases include optimization of jobs on a shared cluster, more quickly performing similar jobs on a cohort of samples with the same reference genome. 
 ##### KRAKEN2
 * ```--kraken``` Determines if KRAKEN2 analysis is to be performed on the sample or not. If set, requires ```--database``` option in order to work correctly.
 * ```--database``` (Type: String/Path) Path to valid KRAKEN2 database, or, if KRAKEN2 environmental variables are set, the name of the database. Only needed if ```--kraken``` set. No default setting.
@@ -55,7 +55,6 @@ SeqVerify has the following optional arguments:
 ##### Other
 * ```--del_temp``` If enabled, deletes the temporary files created during the pipeline's execution. It is on by default, and highly recommended, since temp files can reach upwards of 50-100GB depending on the read coverage.
 * ```--download_defaults``` If enabled, downloads the default genomes and databases to the working directory: [T2T-CHM13v2.0](https://github.com/marbl/CHM13#analysis-set), intended to be used in ```--genome```, [GRCh38/hg38](https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/latest/) for variant calling, and the [8GB PlusPFP](https://benlangmead.github.io/aws-indexes/k2) KRAKEN2 database (placed in a new folder named seqverify_database). Kills the program after downloading these.
-
 
 ## Output
 
@@ -111,18 +110,40 @@ You should then pick a directory to run the pipeline in, from which you'll call 
 
 The pipeline will then run: this will usually take a few hours, with the most time-intensive steps being BWA alignment and genome indexing. The output files as described above will be output in the output folder, and everything else in the temp folder will be deleted unless ```--del_temp``` is set to ```F```.
 
+
+#### Command text file generation
+
+To use the ```--exact``` flag for known insertion sites of transposons, SeqVerify requires the construction of a commands file. The commands file should be a text file and must be formatted as follows:
+
+```CHR:START-END  SEQUENCE```
+
+where the two columns are tab-separated. Every line is a "command" and specifies a modification to the genome. 
+
+CHR is the name of the chromosome that the modification will happen at (e.g. chr1).
+
+START-END is an interval of coordinates to be deleted, not including START.  
+
+SEQUENCE is the sequence to be inserted from START onwards.
+
+For example, the command ```chr5:56644830-56644850	GGCTCTGGCGAGGGCAGAGGAAGTC``` deletes bases 56644831 to 56644850 in chromosome 5 and inserts the sequence ```GGCTCTGGCGAGGGCAGAGGAAGTC``` in their place. 
+
+Pure insertions (i.e. inserting while deleting nothing) can be achieved by putting the same coordinate for both start and end: ```chr1:1-1 AGCT``` deletes nothing and inserts ```AGCT``` after the first base.
+Pure deletions (i.e. deletions with no insertions) can be achieved by leaving the sequence field blank: ```chr2:0-10  ``` deletes the first 10 bases in chromosome 2 and does not replace them with anything.
+
+Multiple commands are allowed in one command file, and seqverify automatically handles interactions between commands on the same chromosome (i.e. a command's coordinates changing because of a previous command), so all the end user needs to do is use the coordinates straight from their source without any adjustment or calculation. 
+
 #### Core optimization
 
 If you are running SeqVerify on a cluster or other powerful machine, you may be interested in optimizing the usage of the cores you use at one. This is where the ```--start``` flag becomes useful: instead of scheduling one ```seqverify``` command as shown above, you can call two, one with ```--start 0``` and a subsequent one with ```--start 2``` to split up the single-threaded and multi-threaded portions of the pipeline. The rest of the arguments should be able to remain the same, such that the two commands you call are:
 
-```seqverify --output output_name --reads_1 r1.fastq --reads_2 r2.fastq --genome genome.fa --marker_sources transgene1.fa transgene2.fa (--kraken True --database database) --start 0```
+```seqverify --output output_name --reads_1 r1.fastq --reads_2 r2.fastq --genome genome.fa --inexact transgene1.fa transgene2.fa (--kraken --database database) --start 0```
 
-```seqverify --output output_name --reads_1 r1.fastq --reads_2 r2.fastq --genome genome.fa --marker_sources transgene1.fa transgene2.fa (--kraken True --database database) --threads T --start 2```
+```seqverify --output output_name --reads_1 r1.fastq --reads_2 r2.fastq --genome genome.fa --inexact transgene1.fa transgene2.fa (--kraken --database database) --threads T --start 2```
 
 Where ```T``` is the number of threads available for the multi-threaded portion.
 
 #### Cohort 
 
-If you are running SeqVerify on multiple samples with the same underlying genome and transgene markers, you can use the ```--start 0``` option combined with ```--del_temp F``` to run the pipeline up to indexing the new genome, to then halt it, manually go into the temp folder, and copy-paste the reference genome and its index into new manually created temp folders for the other samples (making sure the naming convention matches the one described in the main ```seqverify``` file). You will then be able to run ```--start 2``` for all the other samples and skip genome indexing, saving repetitive operations, time, and compute.
+If you are running SeqVerify on multiple samples with the same underlying genome and transgene markers, you can use the ```--start 0``` option combined with ```--del_temp``` to run the pipeline up to indexing the new genome, to then halt it, manually go into the temp folder, and copy-paste the reference genome and its index into new manually created temp folders for the other samples (making sure the naming convention matches the one described in the main ```seqverify``` file). You will then be able to run ```--start 2``` for all the other samples and skip genome indexing, saving repetitive operations, time, and compute.
 
 
