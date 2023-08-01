@@ -54,7 +54,7 @@ SeqVerify has the following optional arguments:
 * ```--variant_intensity``` (Type: String) Includes all variants at or above a certain severity level in the final variant readout. Can be set to (lowest) "MODIFIER", "LOW", "MODERATE", or "HIGH" (highest). Set to "MODERATE" by default.
 ##### Other
 * ```--del_temp``` If enabled, deletes the temporary files created during the pipeline's execution. It is on by default, and highly recommended, since temp files can reach upwards of 50-100GB depending on the read coverage.
-* ```--download_defaults``` If enabled, downloads the default genomes and databases to the working directory: [T2T-CHM13v2.0](https://github.com/marbl/CHM13#analysis-set), intended to be used in ```--genome```, [GRCh38/hg38](https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/latest/) for variant calling, and the [8GB PlusPFP](https://benlangmead.github.io/aws-indexes/k2) KRAKEN2 database (placed in a new folder named seqverify_database). Kills the program after downloading these.
+* ```--download_defaults``` If enabled, downloads the default genomes and databases to the working directory: [T2T-CHM13v2.0](https://github.com/marbl/CHM13#analysis-set), intended to be used in ```--genome```, [GRCh38/hg38](https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/latest/) for variant calling, and the [8GB PlusPFP](https://benlangmead.github.io/aws-indexes/k2) KRAKEN2 database (placed in a new folder named seqverify_database). Kills the program after downloading these, so anything after ```seqverify --download_defaults``` will go unused.
 
 ## Output
 
