@@ -181,19 +181,19 @@ if args.start == 0 or args.start == 2:
 
     #CNVPytor Logic/Commands, these create a .pytor file for the BAM file and go through all the steps necessary to generate a final plot of the entire genome for ease of CNV analysis
     #Refer to github.com/abyzovlab/CNVpytor/tree/master/cnvpytor for more information
-    """ os.system(f'cnvpytor -root {folder}/{pytor} -rd {folder}/{aligned_diff_chr_bam}')
-    os.system(f'cnvpytor -root {folder}/{pytor} -his {bin_size}')
-    os.system(f'cnvpytor -root {folder}/{pytor} -partition {bin_size}')
-    os.system(f'cnvpytor -root {folder}/{pytor} -call {bin_size} > {folder}/calls.{bin_size}.tsv')
-    os.system(f'cnvpytor -root {folder}/{pytor} -plot manhattan {bin_size} -o {folder}/{output_name}.png') """
-
-    genome_configurator(temp_folder,pytor_conf,pytor_gc,genome_with_markers,header)
-
-    os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder}/{pytor} -rd {folder}/{aligned_diff_chr_bam}')
-    os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder}/{pytor} -his {bin_size}')
-    os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder}/{pytor} -partition {bin_size}')
-    os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder}/{pytor} -call {bin_size} > {folder}/calls.{bin_size}.tsv')
-    os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder}/{pytor} -plot manhattan {bin_size} -o {folder}/{output_name}.png')
+    if commands == []:
+        os.system(f'cnvpytor -root {folder}/{pytor} -rd {folder}/{aligned_diff_chr_bam}')
+        os.system(f'cnvpytor -root {folder}/{pytor} -his {bin_size}')
+        os.system(f'cnvpytor -root {folder}/{pytor} -partition {bin_size}')
+        os.system(f'cnvpytor -root {folder}/{pytor} -call {bin_size} > {folder}/calls.{bin_size}.tsv')
+        os.system(f'cnvpytor -root {folder}/{pytor} -plot manhattan {bin_size} -o {folder}/{output_name}.png')
+    else:
+        genome_configurator(temp_folder,pytor_conf,pytor_gc,genome_with_markers,header)
+        os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder}/{pytor} -rd {folder}/{aligned_diff_chr_bam}')
+        os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder}/{pytor} -his {bin_size}')
+        os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder}/{pytor} -partition {bin_size}')
+        os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder}/{pytor} -call {bin_size} > {folder}/calls.{bin_size}.tsv')
+        os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder}/{pytor} -plot manhattan {bin_size} -o {folder}/{output_name}.png')
 
     region_bed(temp_folder,header,commands,marker_list,bed_file) #Creates a bed file to be used as coordinates for the IGV screenshot engine.
     
