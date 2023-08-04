@@ -91,34 +91,16 @@ def igvScreenshot(temp_folder,folder,alignments,genome,bed_file): #If using IGV,
     with open(f"{temp_folder}/seqverify_igv.bat","w+") as file: #Autogenerates an IGV-compatible bat file we will use later to screenshot the relevant parts
         file.write("new\n") #boilerplate code
         file.write(f"snapshotDirectory {folder}\n") #sets the folder for the screenshots
-        file.write(f"load {alignments}\n") #loads the bam file
         file.write(f"genome {genome}\n") #loads the genome
+        file.write(f"load {alignments}\n") #loads the bam file
         file.write(f"maxPanelHeight 500\n") #boilerplate code for adjustment of the screen size
         with open(f"{temp_folder}/{bed_file}","r") as bed: #writes instructions to take a screenshot of every transgene in the bed file
             for line in bed:
-                name,begin,end = line.split("\t")
+                name,begin,end = [i.strip() for i in line.split("\t")]
                 file.write(f"goto {name}:{begin}-{end}\n") #makes IGV go to the entire transgene
                 file.write(f"snapshot fig_{name}.png\n") #takes screenshot and saves it
         file.write("exit") #boilerplate
-    os.system("xvfb-run --auto-servernum igv -b seqverify_igv.bat") #runs XVFB, a headerless server emulator, to run IGV automatically without the need for a GUI.
-
-"""     import_reference_genomes = {
-        "hg19": {
-            "name": "GRCh37",
-            "species": "human",
-            "chromosomes": OrderedDict(
-                [("chr1", (249250621, "A")), ("chr2", (243199373, "A")), ("chr3", (198022430, "A")),
-                 ("chr4", (191154276, "A")), ("chr5", (180915260, "A")), ("chr6", (171115067, "A")),
-                 ("chr7", (159138663, "A")), ("chr8", (146364022, "A")), ("chr9", (141213431, "A")),
-                 ("chr10", (135534747, "A")), ("chr11", (135006516, "A")), ("chr12", (133851895, "A")),
-                 ("chr13", (115169878, "A")), ("chr14", (107349540, "A")), ("chr15", (102531392, "A")),
-                 ("chr16", (90354753, "A")), ("chr17", (81195210, "A")), ("chr18", (78077248, "A")),
-                 ("chr19", (59128983, "A")), ("chr20", (63025520, "A")), ("chr21", (48129895, "A")),
-                 ("chr22", (51304566, "A")), ("chrX", (155270560, "S")), ("chrY", (59373566, "S")),
-                 ("chrM", (16571, "M"))]),
-            "gc_file": pkg_resources.resource_filename('cnvpytor', 'data') + "/gc_hg19.pytor"
-        }
-    } """
+    os.system(f"xvfb-run --auto-servernum igv -b {temp_folder}/seqverify_igv.bat") #runs XVFB, a headerless server emulator, to run IGV automatically without the need for a GUI.
 
 def genome_configurator(temp_folder,pytor_conf,gc_name,genome,sam_header):
     special_chrs = {"chrX":"S","chrY":"S","chrM":"M"}
@@ -132,9 +114,9 @@ def genome_configurator(temp_folder,pytor_conf,gc_name,genome,sam_header):
             if tags[0] == "@SQ":
                 chr_name, chr_len = tags[1].split(":")[1], tags[2].split(":")[1]
                 if chr_name in special_chrs:
-                    genome_dict["chromosomes"][chr_name] = tuple(chr_len,special_chrs[chr_name])
+                    genome_dict["chromosomes"][chr_name] = tuple((chr_len,special_chrs[chr_name]))
                 else:
-                    genome_dict["chromosomes"][chr_name] = tuple(chr_len,"A")
+                    genome_dict["chromosomes"][chr_name] = tuple((chr_len,"A"))
     
     with open(f"{temp_folder}/{pytor_conf}","w+") as conf:
         conf.write(f"import_reference_genomes = {repr(genome_dict)}")

@@ -200,7 +200,7 @@ if args.start == 0 or args.start == 2:
     #Plotting Logic
     if not args.manual_plots:
         #If IGV plots are used (default option), creates plots of the transgenes through IGV: the .bed file here is used to direct IGV towards the relevant regions of the genome
-        igvScreenshot(temp_folder,folder,f'{folder}/{aligned_diff_chr_bam}',f'{temp_folder}/{genome_with_markers}',f'{temp_folder}/{bed_file}')
+        igvScreenshot(temp_folder,folder,f'{folder}/{aligned_diff_chr_bam}',f'{temp_folder}/{genome_with_markers}',bed_file)
     else:
         #If IGV plots are not used, creates matplotlib plots of the transgene copy numbers: the .bed file here is used to direct samtools depth towards the relevant regions to cut down time.
         os.system(f'samtools depth -b {bed_file} {folder}/{aligned_diff_chr_bam} > {temp_folder}/{overall_coverage}')
