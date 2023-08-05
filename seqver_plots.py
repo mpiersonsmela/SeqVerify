@@ -106,13 +106,13 @@ def genome_configurator(temp_folder,pytor_conf,gc_name,genome,sam_header):
     special_chrs = {"chrX":"S","chrY":"S","chrM":"M"}
     genome_dict = {"seqverify_genome":{"name":"seqverify","species":"human","chromosomes":OrderedDict(),"gc_file":os.getcwd()+"/"+temp_folder+"/"+gc_name}}
 
-    os.system(f"cnvpytor -root {gc_name} -gc {temp_folder}/{genome} -make_gc_file")
+    os.system(f"cnvpytor -root {temp_folder}/{gc_name} -gc {temp_folder}/{genome} -make_gc_file")
     
     with open(f"{temp_folder}/{sam_header}","r") as header:
         for line in header:
             tags = line.split("\t")
             if tags[0] == "@SQ":
-                chr_name, chr_len = tags[1].split(":")[1], tags[2].split(":")[1]
+                chr_name, chr_len = tags[1].split(":")[1], tags[2].split(":")[1].strip()
                 if chr_name in special_chrs:
                     genome_dict["seqverify_genome"]["chromosomes"][chr_name] = tuple((chr_len,special_chrs[chr_name]))
                 else:
