@@ -114,9 +114,9 @@ def genome_configurator(temp_folder,pytor_conf,gc_name,genome,sam_header):
             if tags[0] == "@SQ":
                 chr_name, chr_len = tags[1].split(":")[1], tags[2].split(":")[1]
                 if chr_name in special_chrs:
-                    genome_dict["chromosomes"][chr_name] = tuple((chr_len,special_chrs[chr_name]))
+                    genome_dict["seqverify_genome"]["chromosomes"][chr_name] = tuple((chr_len,special_chrs[chr_name]))
                 else:
-                    genome_dict["chromosomes"][chr_name] = tuple((chr_len,"A"))
+                    genome_dict["seqverify_genome"]["chromosomes"][chr_name] = tuple((chr_len,"A"))
     
     with open(f"{temp_folder}/{pytor_conf}","w+") as conf:
         conf.write(f"import_reference_genomes = {repr(genome_dict)}")
