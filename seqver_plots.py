@@ -19,11 +19,11 @@ def region_bed(temp_folder,sam_header,commands,chr_list,output, zoomout = 200): 
         if commands != []:
             for command in commands:
                 fields = str(command).split("\t")
-                chr, start, seq = fields[0].split(":")[0], fields[0].split(":")[1].split("-")[0], len(fields[1])
+                chr, start, seq = fields[0].split(":")[0], int(fields[0].split(":")[1].split("-")[0]), len(fields[1])
                 if start > zoomout:
                     start -= zoomout
                 seq += zoomout ### TODO: check if this will go over the end of the chromosome. For now, users should decrease zoomout if near the end of the chromosome
-                bed.write(f"{chr}\t{start}\t{int(start)+int(seq)}\n")
+                bed.write(f"{chr}\t{str(start)}\t{int(start)+int(seq)}\n")
 
 def histogramData(coveragemap, chromosome, granularity=1): #Collects data to make a single histogram if IGV is not used
     os.system(f"gawk '{{if ($1 ~ /({chromosome})\>/) print $0}};' {coveragemap} > {chromosome}_coverage.cov") #gawks the output of samtools depth -b for the reads relevant to the chromosome
