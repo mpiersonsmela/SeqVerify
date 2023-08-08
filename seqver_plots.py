@@ -3,7 +3,7 @@ import os
 import matplotlib.pyplot as plt
 from collections import OrderedDict
 
-def region_bed(temp_folder,sam_header,commands,chr_list,output): #Generates .bed file necessary for running the other functions
+def region_bed(temp_folder,sam_header,commands,chr_list,output, zoomout = 200): #Generates .bed file necessary for running the other functions
     with open(f"{temp_folder}/{output}","w+") as bed: #Creates a new bed file
         if chr_list != []:
             with open(f"{temp_folder}/{sam_header}") as file:
@@ -20,6 +20,9 @@ def region_bed(temp_folder,sam_header,commands,chr_list,output): #Generates .bed
             for command in commands:
                 fields = str(command).split("\t")
                 chr, start, seq = fields[0].split(":")[0], fields[0].split(":")[1].split("-")[0], len(fields[1])
+                if start > zoomout:
+                    start -= zoomout
+                seq += zoomout ### TODO: check if this will go over the end of the chromosome. For now, users should decrease zoomout if near the end of the chromosome
                 bed.write(f"{chr}\t{start}\t{int(start)+int(seq)}\n")
 
 def histogramData(coveragemap, chromosome, granularity=1): #Collects data to make a single histogram if IGV is not used
