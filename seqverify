@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser()
 
 #Parses commandline arguments:
 #Main arguments
-parser.add_argument('--output', type=str, required=False, default="output") #Name of the output folder
+parser.add_argument('--output', type=str, required=False) #Name of the output folder
 parser.add_argument('--reads_1', type=str, required=False) #Name/Path of First .fq file for reads
 parser.add_argument('--reads_2', type=str, required=False) #Name/Path of Second .fq file for reads
 parser.add_argument('--inexact', type=str, required=False, nargs='+') #Name/Path of transgenes to be appended to the genome as extra sequences
@@ -26,26 +26,25 @@ parser.add_argument('--exact', type=str, required=False) #Name/Path of command f
 parser.add_argument('--del_temp', action='store_const',const=False, required=False, default=True) #HIGHLY RECOMMENDED - Option to delete temporary files when the pipeline is done
 
 #Genome arguments
-parser.add_argument('--genome', type=str, required=False, default=f"{os.getcwd()}/seqverify_defaults/chm13v2.0.fa") #Name/Path of genome file (CHM13 recommended) used to perform everything but variant calling.
+parser.add_argument('--genome', type=str, required=False, default=None) #Name/Path of genome file (CHM13 recommended) used to perform everything but variant calling.
 
 #KRAKEN2 arguments
 parser.add_argument('--kraken', action='store_const',const=True, required=False,default=False) #Flag enabling KRAKEN2/BRACKEN analysis
-parser.add_argument('--database',type=str,required=False, default=f"{os.getcwd()}/seqverify_defaults/seqverify_database") #Path to KRAKEN2 database
+parser.add_argument('--database',type=str,required=False) #Path to KRAKEN2 database
 
 #Insertion Site Detection Arguments
 parser.add_argument('--granularity',type=int, required=False, default=500) #How far apart two insertions can be to count as the same insertion site
 parser.add_argument('--threads',type=int,required=False, default=1) #How many threads seqverify can use
 parser.add_argument('--max_mem', type=str, required=False, default='16G') #Max memory allowed, ending in capital "G" or "M"
 parser.add_argument('--min_matches', type=int, required=False,default=1) #How many times an insertion needs to align to the reference genome to show up in the readout
-parser.add_argument('--start', type=str, required=False, default="beginning") #Check GitHub, TL;DR: Setting this to "1" will only run the single-threaded portion of the pipeline, "2" will only run the multi-threaded portion
+parser.add_argument('--start', type=int, required=False, default=0) #Check GitHub, TL;DR: Setting this to "1" will only run the single-threaded portion of the pipeline, "2" will only run the multi-threaded portion
 
 #CNV/Plotting Arguments
 parser.add_argument('--manual_plots',action='store_const',const=True,required=False,default=False) #Flag enabling matplotlib plots instead of IGV plots 
 parser.add_argument('--bin_size',type=int, required=False, default=100000) #If manual plots are enabled, the size of each bin in the histogram
 
 #Variant Calling Arguments
-parser.add_argument('--variant_calling',action='store_const',const=True,required=False,default=False) #Flag enabling variang calling
-parser.add_argument('--variant_args',nargs=3,type=str,required=False, default=[f"{os.getcwd()}/seqverify_defaults/hg38.fa",f"{os.getcwd()}/seqverify_defaults/snpEff.config",f"{os.getcwd()}/seqverify_defaults/clinvar.vcf"]) #Space-separated: the Path/File to the hg38 genome, the SnpEff.jar config path, the clinvar DB path
+parser.add_argument('--variant_calling',nargs=3,type=str,required=False) #Space-separated: the Path/File to the hg38 genome, the SnpEff.jar config path, the clinvar DB path
 parser.add_argument('--variant_intensity',type=str,required=False,default="MODERATE") #Minimum severity needed for a variant to show up in the readout, can be set to "MODIFIER", "LOW", "MODERATE", or "HIGH"
 
 #Other
@@ -53,37 +52,18 @@ parser.add_argument('--download_defaults',action='store_const',const=True,requir
 
 args = parser.parse_args()
 
-def starting_point(min_step):
-    if args.start == "beginning" or args.start == min_step:
-        args.start = "beginning"
-        return True
-    else:
-        return False
-
 if args.download_defaults: #If --download_defaults is set, downloads the three databases and quits the program
     #Note:  These FTP links are likely to change over time and break the command. 
     #       Please open an issue on GitHub if they do! https://github.com/mpiersonsmela/SeqVerify
-    os.system('mkdir seqverify_defaults')
+    os.system('curl -OJX GET "http://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/latest/hg38.fa.gz"')
+    os.system('gunzip hg38.fa.gz')
 
-    #Downloads chm13v2.0 as a reference genome for everything except the variant calling
-    os.system('curl -OJX GET "https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/analysis_set/chm13v2.0.fa.gz" --output-dir seqverify_defaults')
-    os.system('gunzip seqverify_defaults/chm13v2.0.fa.gz')
+    os.system('mkdir seqverify_database')
+    os.system('curl -OJX GET "https://genome-idx.s3.amazonaws.com/kraken/k2_pluspf_08gb_20230605.tar.gz"')
+    os.system('tar -xzf k2_pluspf_08gb_20230605.tar.gz -C seqverify_database')
 
-    #Downloads hg38 as a reference genome for the variant calling
-    os.system('curl -OJX GET "http://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/latest/hg38.fa.gz" --output-dir seqverify_defaults')
-    os.system('gunzip seqverify_defaults/hg38.fa.gz')
-
-    #Downloads a KRAKEN-valid 8GB database, PlusPF_8GB
-    os.system('mkdir seqverify_defaults/seqverify_database')
-    os.system('curl -OJX GET "https://genome-idx.s3.amazonaws.com/kraken/k2_pluspf_08gb_20230605.tar.gz" --output-dir seqverify_defaults')
-    os.system('tar -xzf seqverify_defaults/k2_pluspf_08gb_20230605.tar.gz -C seqverify_database')
-
-    #Downloads the snpEff config file for ease of access during variant calling
-    os.system('curl -OJX GET "https://raw.githubusercontent.com/pcingola/SnpEff/master/config/snpEff.config" --output-dir seqverify_defaults')
-
-    #Downloads the latest version of the ClinVar database for variant calling purposes
-    os.system('curl -OJX GET "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz" --output-dir seqverify_defaults')
-    os.system('gunzip seqverify_defaults/clinvar.vcf.gz')
+    os.system('curl -OJX GET "https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/analysis_set/chm13v2.0.fa.gz"')
+    os.system('gunzip chm13v2.0.fa.gz')
 
     sys.exit(0)
 
@@ -144,7 +124,7 @@ variant_vcf = f"seqverify_{output_name}.vcf"
 variant_vcf_ann = f"seqverify_{output_name}.ann.vcf"
 bed_file = f"{output_name}.bed"
 
-if starting_point("beginning"):
+if args.start == 0 or args.start == 1:
     #Preliminary Work - Generates the output folder given a specified --output string as well as the temp folder for the pipeline to work within
     os.system(f'mkdir {folder}')
     os.system(f'mkdir {temp_folder}')
@@ -170,13 +150,12 @@ if starting_point("beginning"):
     os.system(f'bwa index -b {base_block} {temp_folder}/{genome_with_markers}')
     os.system(f'cp {temp_folder}/{genome_with_markers} {folder}/{genome_with_markers}')
 
-if starting_point("align"):
+if args.start == 0 or args.start == 2:
     #Beginning of multithreaded part:
 
     #Aligns the new genome using BWA-MEM
     os.system(f'bwa mem -M -t {threads} {temp_folder}/{genome_with_markers} {reads_1_path} {reads_2_path} > {temp_folder}/{aligned_with_markers}')
-    
-if starting_point("markers"):
+  
     if marker_sources_path != []:
         #Saves all names of transgenes/markers we want to find insertion sites of into a list for later usage and makes it into a string
         with open(f'{temp_folder}/{marker_list_file}') as f:
@@ -200,7 +179,6 @@ if starting_point("markers"):
     #Creates a header from the BAM file
     os.system(f'samtools view -@ {threads} -H {folder}/{aligned_diff_chr_bam} > {temp_folder}/{header}')
 
-if starting_point("cnv"):
     #CNVPytor Logic/Commands, these create a .pytor file for the BAM file and go through all the steps necessary to generate a final plot of the entire genome for ease of CNV analysis
     #Refer to github.com/abyzovlab/CNVpytor/tree/master/cnvpytor for more information
     if commands == []:
@@ -232,7 +210,6 @@ if starting_point("cnv"):
         os.system(f'mv fig_* {folder}')
         os.system(f'mv *.cov {temp_folder}')
 
-if starting_point("kraken"):
     #KRAKEN2/BRACKEN system
     if args.kraken:
         #If KRAKEN is enabled (default: not enabled), runs the KRAKEN pipeline.
@@ -248,15 +225,14 @@ if starting_point("kraken"):
         #Runs BRACKEN, generating a report in the main output folder.  
         os.system(f'bracken -d {database} -i {folder}/classified_seqs_{output_name}.kreport -o {folder}/classified_seqs_{output_name}.bracken -r 150')
 
-if starting_point("variant_calling"):
-    if args.variant_calling:
+    if args.variant_calling != []:
         #Sets up the three variables needed for variant calling
         # 1) The genome to be re-aligned to (hg38, given that CHM13 clinvar does not work)
         # 2) The path to the config file
         # 3) The path to a valid annotation DB
-        variant_genome_source_path = pathFinder(args.variant_args[0])
-        variant_config_path = args.variant_args[1]
-        clinvardb_source_path = pathFinder(args.variant_args[2])
+        variant_genome_source_path = pathFinder(args.variant_calling[0])
+        variant_config_path = args.variant_calling[1]
+        clinvardb_source_path = pathFinder(args.variant_calling[2])
         
         #232-239: Standard procedure for realigning the reads to the new genome
         os.system(f"bwa index {variant_genome_source_path}")

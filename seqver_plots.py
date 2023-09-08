@@ -3,7 +3,7 @@ import os
 import matplotlib.pyplot as plt
 from collections import OrderedDict
 
-def region_bed(temp_folder,sam_header,commands,chr_list,output): #Generates .bed file necessary for running the other functions
+def region_bed(temp_folder,sam_header,commands,chr_list,output, zoomout = 200): #Generates .bed file necessary for running the other functions
     with open(f"{temp_folder}/{output}","w+") as bed: #Creates a new bed file
         if chr_list != []:
             with open(f"{temp_folder}/{sam_header}") as file:
@@ -13,14 +13,17 @@ def region_bed(temp_folder,sam_header,commands,chr_list,output): #Generates .bed
                         chr_name = tags[1].split(":")[1] #Takes the chromosome/transgene's name
                         if chr_name in chr_list: #Excludes all the names we don't want (i.e. usually all the human non-transgene chromosomes)
                             end = int(tags[2].split(":")[1])-1 #Calculates 0-indexed final coordinate of transgene (SAM files are 1-indexed, .bed files are )
-                            bed.write(f"{chr_name}\t0\t{end}\n") #Writes the coordinates to the file
+                            bed.write(f"{chr_name}\t1\t{end}\n") #Writes the coordinates to the file #NOTE: starting at 1 to avoid IGV problems
                     else:
                         continue
         if commands != []:
             for command in commands:
                 fields = str(command).split("\t")
-                chr, start, seq = fields[0].split(":")[0], fields[0].split(":")[1].split("-")[0], len(fields[1])
-                bed.write(f"{chr}\t{start}\t{int(start)+int(seq)}\n")
+                chr, start, seq = fields[0].split(":")[0], int(fields[0].split(":")[1].split("-")[0]), len(fields[1])
+                if start > zoomout:
+                    start -= zoomout
+                seq += zoomout ### TODO: check if this will go over the end of the chromosome. For now, users should decrease zoomout if near the end of the chromosome
+                bed.write(f"{chr}\t{str(start)}\t{int(start)+int(seq)}\n")
 
 def histogramData(coveragemap, chromosome, granularity=1): #Collects data to make a single histogram if IGV is not used
     os.system(f"gawk '{{if ($1 ~ /({chromosome})\>/) print $0}};' {coveragemap} > {chromosome}_coverage.cov") #gawks the output of samtools depth -b for the reads relevant to the chromosome
@@ -87,7 +90,7 @@ def chrHistograms(coveragemap, chrList): #Generates histograms for every chromos
         except ZeroDivisionError:
             continue
 
-def igvScreenshot(temp_folder,folder,alignments,genome,bed_file): #If using IGV, deals with IGV logic
+def igvScreenshot(temp_folder,folder,alignments,genome,bed_file,imageformat="png"): #If using IGV, deals with IGV logic
     with open(f"{temp_folder}/seqverify_igv.bat","w+") as file: #Autogenerates an IGV-compatible bat file we will use later to screenshot the relevant parts
         file.write("new\n") #boilerplate code
         file.write(f"snapshotDirectory {folder}\n") #sets the folder for the screenshots
@@ -98,9 +101,9 @@ def igvScreenshot(temp_folder,folder,alignments,genome,bed_file): #If using IGV,
             for line in bed:
                 name,begin,end = [i.strip() for i in line.split("\t")]
                 file.write(f"goto {name}:{begin}-{end}\n") #makes IGV go to the entire transgene
-                file.write(f"snapshot fig_{name}.png\n") #takes screenshot and saves it
+                file.write(f"snapshot fig_{name}.{imageformat}\n") #takes screenshot and saves it
         file.write("exit") #boilerplate
-    os.system(f"xvfb-run --auto-servernum igv -b {temp_folder}/seqverify_igv.bat") #runs XVFB, a headerless server emulator, to run IGV automatically without the need for a GUI.
+    os.system(f"xvfb-run --auto-servernum --server-args=\"-screen 0, 2048x1536x24\" igv -b {temp_folder}/seqverify_igv.bat") #runs XVFB, a headerless server emulator, to run IGV automatically without the need for a GUI.
 
 def genome_configurator(temp_folder,pytor_conf,gc_name,genome,sam_header):
     special_chrs = {"chrX":"S","chrY":"S","chrM":"M"}
@@ -112,7 +115,7 @@ def genome_configurator(temp_folder,pytor_conf,gc_name,genome,sam_header):
         for line in header:
             tags = line.split("\t")
             if tags[0] == "@SQ":
-                chr_name, chr_len = tags[1].split(":")[1], tags[2].split(":")[1].strip()
+                chr_name, chr_len = tags[1].split(":")[1], int(tags[2].split(":")[1].strip())
                 if chr_name in special_chrs:
                     genome_dict["seqverify_genome"]["chromosomes"][chr_name] = tuple((chr_len,special_chrs[chr_name]))
                 else:
@@ -120,6 +123,3 @@ def genome_configurator(temp_folder,pytor_conf,gc_name,genome,sam_header):
     
     with open(f"{temp_folder}/{pytor_conf}","w+") as conf:
         conf.write(f"import_reference_genomes = {repr(genome_dict)}")
-
-
-
