@@ -1,0 +1,23 @@
+name: seqverify-main
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - bcftools
+  - blast
+  - bwa
+  - cnvpytor
+  - htslib
+  - idna
+  - igv=2.13.2
+  - kraken2
+  - matplotlib
+  - numpy
+  - openjdk=11
+  - pip
+  - python=3.10
+  - samtools
+  - scipy
+  - snpeff=5.1
+  - snpsift=4.3.1t
