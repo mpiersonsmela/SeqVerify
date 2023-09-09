@@ -228,7 +228,14 @@ if args.start == "cnv" or args.start == "all":
         args.start = "plots"
 
 if args.start == "plots" or args.start == "all":
-    region_bed(temp_folder,header,commands,marker_list,bed_file) #Creates a bed file to be used as coordinates for the IGV screenshot engine.
+    try:
+        region_bed(temp_folder,header,commands,marker_list,bed_file) #Creates a bed file to be used as coordinates for the IGV screenshot engine.
+    except NameError: #regenerate commands if the beginning step was skipped
+        commands = commandHandler(genome_source_path,exact_path,temp_folder,genome_with_markers)
+        with open(f'{temp_folder}/{marker_list_file}') as f:
+            marker_list = [i[1:].strip() for i in f if i.startswith('>')]
+        markers = "|".join(marker_list)
+        region_bed(temp_folder,header,commands,marker_list,bed_file)
     #Plotting Logic
     if not args.manual_plots:
         #If IGV plots are used (default option), creates plots of the transgenes through IGV: the .bed file here is used to direct IGV towards the relevant regions of the genome
