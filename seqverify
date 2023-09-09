@@ -8,12 +8,10 @@ from seqver_plots import *
 from seqver_genomeupdate import *
 from seqver_lofFinder import *
 
-
 parser = argparse.ArgumentParser()
 
 #Sample call:
 #seqverify --output S04 --reads_1 S04_1.fastq --reads_2 S04_2.fastq --genome chm13v2.0.fa --inexact T2A-mGreenLantern.fa T2A-tdTomato.fa transposons_in_S04.fa unwanted_plasmids.fa --granularity 500 --threads 15
-
 #seqverify --output c5 --reads_1 chr5_1.fastq --reads_2 chr5_2.fastq --genome chr5_original.fa  --exact commands.txt --threads 15 --max_mem 8G
 
 #Parses commandline arguments:
@@ -23,7 +21,7 @@ parser.add_argument('--reads_1', type=str, required=False) #Name/Path of First .
 parser.add_argument('--reads_2', type=str, required=False) #Name/Path of Second .fq file for reads
 parser.add_argument('--inexact', type=str, required=False, nargs='+') #Name/Path of transgenes to be appended to the genome as extra sequences
 parser.add_argument('--exact', type=str, required=False) #Name/Path of command file instructing where to insert known-insertion transgenes 
-parser.add_argument('--del_temp', action='store_const',const=False, required=False, default=True) #HIGHLY RECOMMENDED - Option to delete temporary files when the pipeline is done
+parser.add_argument('--del_temp', action='store_const',const=False, required=False, default=False) #HIGHLY RECOMMENDED - Option to delete temporary files when the pipeline is done
 
 #Genome arguments
 parser.add_argument('--genome', type=str, required=False, default=f"{os.getcwd()}/seqverify_defaults/chm13v2.0.fa") #Name/Path of genome file (CHM13 recommended) used to perform everything but variant calling.
@@ -38,14 +36,14 @@ parser.add_argument('--threads',type=int,required=False, default=1) #How many th
 parser.add_argument('--max_mem', type=str, required=False, default='16G') #Max memory allowed, ending in capital "G" or "M"
 parser.add_argument('--min_matches', type=int, required=False,default=1) #How many times an insertion needs to align to the reference genome to show up in the readout
 parser.add_argument('--start', type=str, required=False, default="beginning") #Check GitHub, TL;DR: Setting this to "1" will only run the single-threaded portion of the pipeline, "2" will only run the multi-threaded portion
+parser.add_argument('--keepgoing',action='store_const',const=True,required=False,default=True) #continue to next part after completing
 
 #CNV/Plotting Arguments
 parser.add_argument('--manual_plots',action='store_const',const=True,required=False,default=False) #Flag enabling matplotlib plots instead of IGV plots 
 parser.add_argument('--bin_size',type=int, required=False, default=100000) #If manual plots are enabled, the size of each bin in the histogram
 
 #Variant Calling Arguments
-parser.add_argument('--variant_calling',action='store_const',const=True,required=False,default=False) #Flag enabling variang calling
-parser.add_argument('--variant_args',nargs=3,type=str,required=False, default=[f"{os.getcwd()}/seqverify_defaults/hg38.fa",f"{os.getcwd()}/seqverify_defaults/snpEff.config",f"{os.getcwd()}/seqverify_defaults/clinvar.vcf"]) #Space-separated: the Path/File to the hg38 genome, the SnpEff.jar config path, the clinvar DB path
+parser.add_argument('--variant_calling',nargs=2,type=str,required=False) #Space-separated: the Path/File to the hg38 genome, the SnpEff.jar config path, the clinvar DB path
 parser.add_argument('--variant_intensity',type=str,required=False,default="MODERATE") #Minimum severity needed for a variant to show up in the readout, can be set to "MODIFIER", "LOW", "MODERATE", or "HIGH"
 
 #Other
@@ -53,12 +51,6 @@ parser.add_argument('--download_defaults',action='store_const',const=True,requir
 
 args = parser.parse_args()
 
-def starting_point(min_step):
-    if args.start == "beginning" or args.start == min_step:
-        args.start = "beginning"
-        return True
-    else:
-        return False
 
 if args.download_defaults: #If --download_defaults is set, downloads the three databases and quits the program
     #Note:  These FTP links are likely to change over time and break the command. 
@@ -83,6 +75,7 @@ if args.download_defaults: #If --download_defaults is set, downloads the three d
 
     #Downloads the latest version of the ClinVar database for variant calling purposes
     os.system('curl -OJX GET "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz" --output-dir seqverify_defaults')
+    os.system('curl -OJX GET "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz.tbi" --output-dir seqverify_defaults')
     os.system('gunzip seqverify_defaults/clinvar.vcf.gz')
 
     sys.exit(0)
@@ -121,6 +114,9 @@ elif type(args.max_mem) == 'int':
     max_mem = int(args.max_mem)
 
 base_block = max_mem / 8
+#Set Java max mem for Java subprocesses (snpEff, etc)
+os.environ['_JAVA_OPTIONS'] = '-Xmx'+args.max_mem
+os.system('echo $_JAVA_OPTIONS')
 
 #Stores Variable/Folder Names:
 folder = f"seqverify_{output_name}"
@@ -144,7 +140,7 @@ variant_vcf = f"seqverify_{output_name}.vcf"
 variant_vcf_ann = f"seqverify_{output_name}.ann.vcf"
 bed_file = f"{output_name}.bed"
 
-if starting_point("beginning"):
+if args.start == "beginning" or args.start == "all":
     #Preliminary Work - Generates the output folder given a specified --output string as well as the temp folder for the pipeline to work within
     os.system(f'mkdir {folder}')
     os.system(f'mkdir {temp_folder}')
@@ -169,14 +165,20 @@ if starting_point("beginning"):
      #Builds the indices for the genome that has now been augmented with the transgenes, necessary for alignment
     os.system(f'bwa index -b {base_block} {temp_folder}/{genome_with_markers}')
     os.system(f'cp {temp_folder}/{genome_with_markers} {folder}/{genome_with_markers}')
+    if args.keepgoing:
+        print("Finished beginning, continuing to align")
+        args.start = "align"
 
-if starting_point("align"):
+if args.start == "align" or args.start == "all":
     #Beginning of multithreaded part:
 
     #Aligns the new genome using BWA-MEM
     os.system(f'bwa mem -M -t {threads} {temp_folder}/{genome_with_markers} {reads_1_path} {reads_2_path} > {temp_folder}/{aligned_with_markers}')
+    if args.keepgoing:
+        print("Finished align, continuing to markers")
+        args.start = "markers"
     
-if starting_point("markers"):
+if args.start == "markers" or args.start == "all":
     if marker_sources_path != []:
         #Saves all names of transgenes/markers we want to find insertion sites of into a list for later usage and makes it into a string
         with open(f'{temp_folder}/{marker_list_file}') as f:
@@ -199,8 +201,12 @@ if starting_point("markers"):
 
     #Creates a header from the BAM file
     os.system(f'samtools view -@ {threads} -H {folder}/{aligned_diff_chr_bam} > {temp_folder}/{header}')
+    
+    if args.keepgoing:
+        print("Finished markers, continuing to CNV")
+        args.start = "cnv"
 
-if starting_point("cnv"):
+if args.start == "cnv" or args.start == "all":
     #CNVPytor Logic/Commands, these create a .pytor file for the BAM file and go through all the steps necessary to generate a final plot of the entire genome for ease of CNV analysis
     #Refer to github.com/abyzovlab/CNVpytor/tree/master/cnvpytor for more information
     if commands == []:
@@ -217,8 +223,12 @@ if starting_point("cnv"):
         os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder}/{pytor} -call {bin_size} > {folder}/calls.{bin_size}.tsv')
         os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder}/{pytor} -plot manhattan {bin_size} -o {folder}/{output_name}.png')
 
+    if args.keepgoing:
+        print("Finished CNVpytor, continuing to plots")
+        args.start = "plots"
+
+if args.start == "plots" or args.start == "all":
     region_bed(temp_folder,header,commands,marker_list,bed_file) #Creates a bed file to be used as coordinates for the IGV screenshot engine.
-    
     #Plotting Logic
     if not args.manual_plots:
         #If IGV plots are used (default option), creates plots of the transgenes through IGV: the .bed file here is used to direct IGV towards the relevant regions of the genome
@@ -231,8 +241,12 @@ if starting_point("cnv"):
         #Moves the plots and the coverage maps to the main and temp folders, respectively.
         os.system(f'mv fig_* {folder}')
         os.system(f'mv *.cov {temp_folder}')
+        
+    if args.keepgoing:
+        print("Finished plots, continuing to Kraken (if enabled)")
+        args.start = "kraken"
 
-if starting_point("kraken"):
+if args.start == "kraken" or args.start == "all":
     #KRAKEN2/BRACKEN system
     if args.kraken:
         #If KRAKEN is enabled (default: not enabled), runs the KRAKEN pipeline.
@@ -248,37 +262,47 @@ if starting_point("kraken"):
         #Runs BRACKEN, generating a report in the main output folder.  
         os.system(f'bracken -d {database} -i {folder}/classified_seqs_{output_name}.kreport -o {folder}/classified_seqs_{output_name}.bracken -r 150')
 
-if starting_point("variant_calling"):
-    if args.variant_calling:
+    if args.keepgoing:
+        print("Finished kraken, continuing to variant calling (if enabled)")
+        args.start = "variant"
+
+if args.start == "variant" or args.start == "all":
+    if args.variant_calling is not None and args.variant_calling != []:
+        ##### Do the variant calling #####
+        
         #Sets up the three variables needed for variant calling
         # 1) The genome to be re-aligned to (hg38, given that CHM13 clinvar does not work)
         # 2) The path to the config file
         # 3) The path to a valid annotation DB
-        variant_genome_source_path = pathFinder(args.variant_args[0])
-        variant_config_path = args.variant_args[1]
-        clinvardb_source_path = pathFinder(args.variant_args[2])
+        variant_genome_source_path = pathFinder(args.variant_calling[0]) #example: "seqverify_database/hg38.fa"
+        #variant_config_path = args.variant_calling[1] #not used. Maybe add as optional argument?
+        clinvardb_source_path = pathFinder(args.variant_calling[1]) #example: "seqverify_database/clinvar.vcf.gz" Note, vcf.gz.tbi file must also be present
         
-        #232-239: Standard procedure for realigning the reads to the new genome
-        os.system(f"bwa index {variant_genome_source_path}")
+        #realigning the reads to the new genome
+        os.system(f"bwa index {variant_genome_source_path}") #already indexed
         os.system(f"samtools faidx {variant_genome_source_path}")
-
-        os.system(f"bwa mem -M -t {threads} {variant_genome_source_path} {reads_1_path} {reads_2_path} > {temp_folder}/{variant_genome_aligned}") 
+        
+        bwa_cmd = f"bwa mem -M -t {threads} {variant_genome_source_path} {reads_1_path} {reads_2_path} > {temp_folder}/{variant_genome_aligned}"
+        #print(bwa_cmd)
+        
+        exitcode = os.system(bwa_cmd)
+        if exitcode!=0: sys.exit("BWA failed")
         
         os.system(f"samtools sort -@ {threads} {temp_folder}/{variant_genome_aligned} > {temp_folder}/{variant_genome_aligned_bam}") 
         os.system(f"samtools index -@ {threads} {temp_folder}/{variant_genome_aligned_bam}")
-
+        
         #Generates the VCF through bcftools mpileup
-        os.system(f"bcftools mpileup --threads {threads} -g 2,20 -f {variant_genome_source_path} -Ov {temp_folder}/{variant_genome_aligned_bam} > {temp_folder}/{variant_vcf}")
-
+        #Calls variants using bcftools call. -mv option outputs only variant sites
+        #TODO: add multithreading (maybe split by chromosomes and then recombine)
+        os.system(f"bcftools mpileup -Ou -f {variant_genome_source_path} {temp_folder}/{variant_genome_aligned_bam} | bcftools call -mv -Ov -o {temp_folder}/{variant_vcf}")
+        
         #Runs snpEff, SnpSift to do a first pass of filtering the variants, saves everything in the main folder for post-pipeline analysis
-        os.system(f"java -Xmx{args.max_mem} -jar snpEff.jar -v -c {variant_config_path} hg38 {temp_folder}/{variant_vcf} > {temp_folder}/{variant_vcf_ann}")
-
-        os.system(f"java -Xmx{args.max_mem} -jar SnpSift.jar annotate -c {variant_config_path} -v {clinvardb_source_path} {temp_folder}/{variant_vcf_ann} > {folder}/{variant_vcf_ann}")
+        os.system(f"snpEff -v hg38 {temp_folder}/{variant_vcf} > {temp_folder}/{variant_vcf_ann}")
+        os.system(f"SnpSift annotate -v {clinvardb_source_path} {temp_folder}/{variant_vcf_ann} > {folder}/{variant_vcf_ann}")
         
         #Further filter the reads, saves everything to a readout in the main folder
-        mutation_logger(folder,variant_vcf_ann,args.variant_intensity)  
-
+        mutation_logger(folder,variant_vcf_ann,args.variant_intensity)
     #If deletion of files is enabled (which is it by default), deletes the temp folder.
     #This is recommended, especially since temp files contain SAM files that can get to 100+ GB depending on the size of the original inputs.
-    if args.del_temp:
-        os.system(f'rm -r {temp_folder}')
+if args.del_temp:
+    os.system(f'rm -r {temp_folder}')
