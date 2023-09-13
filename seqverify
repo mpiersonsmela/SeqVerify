@@ -138,6 +138,7 @@ variant_genome_aligned = f"seqverify_{output_name}_variant.sam"
 variant_genome_aligned_bam = f"seqverify_{output_name}_variant.bam"
 variant_vcf = f"seqverify_{output_name}.vcf"
 variant_vcf_ann = f"seqverify_{output_name}.ann.vcf"
+variant_lof = f"seqverify_{output_name}_variants.tsv"
 bed_file = f"{output_name}.bed"
 
 if args.start == "beginning" or args.start == "all":
@@ -308,7 +309,7 @@ if args.start == "variant" or args.start == "all":
         os.system(f"SnpSift annotate -v {clinvardb_source_path} {temp_folder}/{variant_vcf_ann} > {folder}/{variant_vcf_ann}")
         
         #Further filter the reads, saves everything to a readout in the main folder
-        mutation_logger(folder,variant_vcf_ann,args.variant_intensity)
+        mutation_logger(folder,variant_lof,variant_vcf_ann,args.variant_intensity)
     #If deletion of files is enabled (which is it by default), deletes the temp folder.
     #This is recommended, especially since temp files contain SAM files that can get to 100+ GB depending on the size of the original inputs.
 if args.del_temp:
