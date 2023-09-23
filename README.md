@@ -3,15 +3,22 @@ SeqVerify is a Python-based command line tool for analysis of whole genome seque
 
 ## Install
 
-### Dependencies
-* Python >=3.9
-* SAMtools >=1.14
+### Dependencies (& Dependencies of Dependencies)
+* BCFtools
+* BLAST
 * BWA >=0.7
 * CNVPytor >=1.3
+* HTSLIB
+* IDNA
+* IGV >= 2.13.2
 * Kraken2 >= 2.0
-* Matplotlib >= 2.2
-* IGV >= 2.4
-* BCFtools
+* Matplotlib(-base) >= 2.2
+* Numpy
+* Python >=3.10
+* SAMtools >=1.14
+* SciPy
+* SNPEff >= 5.1
+* SNPSift >= 4.3.1t
 
 ### Install through bioconda
 
@@ -40,7 +47,7 @@ SeqVerify has the following optional arguments:
 ##### Performance
 * ```--threads``` (Type: Integer) Determines how many CPU threads are used in the multithreaded portion of the pipeline. Set to 1 by default.
 * ```--max_mem``` (Type: String) Determines what the maximum amount of memory to be used in the indexing of the reference genome should be. Expects an integer followed by "M" or "G" (case-sensitive) for "Megabytes" or "Gigabytes" respectively. Set by default to "16G", 16 Gigabytes.
-* ```--start``` (Type: Integer) Designed to optimize core usage. Valid values are 0,1,2. 0, the default value, runs the entire pipeline. 1 runs only the single-threaded portions of the pipeline (up to indexing the modified genome), 2 runs only the multi-threaded portions of the pipeline (aligning the new genome onwards). Use cases include optimization of jobs on a shared cluster, more quickly performing similar jobs on a cohort of samples with the same reference genome. 
+* ```--start``` (Type: String) Determines where the pipeline starts. Can be set to "beginning" (the default option, runs the entire pipeline), "align" (skips the creation of the augmented genome and the output folders to start at the alignment process), "markers" (skips to the creation of the insertion site readout), "cnv" (skips to the CNV analysis), "plots" (skips to the generation of the CNV plots), "kraken" (skips to the microbial contamination analysis), "variant" (skips to SNV analysis). This option may be useful for core optimization on clusters: e.g. "beginning" is a single-core operation, "align" is a multi-core operation, so on a job scheduler a user could set a job dependent on the other and only use multiple cores when rquired. It may also be used to avoid having to restart the pipeline from scratch should the hardware or the software fail for any reason, or to perform further analysis on data that SeqVerify has already process (e.g. add KRAKEN2 analysis when it wasn't initially requested).
 ##### KRAKEN2
 * ```--kraken``` Determines if KRAKEN2 analysis is to be performed on the sample or not. If set, requires ```--database``` option in order to work correctly.
 * ```--database``` (Type: String/Path) Path to valid KRAKEN2 database, or, if KRAKEN2 environmental variables are set, the name of the database. Only needed if ```--kraken``` set. No default setting.
@@ -54,8 +61,8 @@ SeqVerify has the following optional arguments:
 * ```--variant_calling``` Turns on the variant calling portion of the pipeline, and takes three space-separated arguments: the name/path of a genome compatible with the VCF annotation DB used (e.g. hg38 for ClinVar), the path to the snpEff config file, and the name/path to a valid annotation DB (e.g. ClinVar)
 * ```--variant_intensity``` (Type: String) Includes all variants at or above a certain severity level in the final variant readout. Can be set to (lowest) "MODIFIER", "LOW", "MODERATE", or "HIGH" (highest). Set to "MODERATE" by default.
 ##### Other
-* ```--del_temp``` If enabled, deletes the temporary files created during the pipeline's execution. It is on by default, and highly recommended, since temp files can reach upwards of 50-100GB depending on the read coverage.
-* ```--download_defaults``` If enabled, downloads the default genomes and databases to the working directory: [T2T-CHM13v2.0](https://github.com/marbl/CHM13#analysis-set), intended to be used in ```--genome```, [GRCh38/hg38](https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/latest/) for variant calling, and the [8GB PlusPFP](https://benlangmead.github.io/aws-indexes/k2) KRAKEN2 database (placed in a new folder named seqverify_database). Kills the program after downloading these, so anything after ```seqverify --download_defaults``` will go unused.
+* ```--keep_temp``` If enabled, keeps the temporary files created during the pipeline's execution. It is off by default. We do not recommend turning it on since temp files can reach upwards of 50-100GB depending on the read coverage.
+* ```--download_defaults``` If enabled, downloads the default genomes and databases to the working directory: [T2T-CHM13v2.0](https://github.com/marbl/CHM13#analysis-set), intended to be used in ```--genome```, [GRCh38/hg38](https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/latest/) for variant calling, and the [8GB PlusPFP](https://benlangmead.github.io/aws-indexes/k2) KRAKEN2 database (placed in a new folder named seqverify_database). Kills the program after downloading these, so anything after ```seqverify --download_defaults``` is ignored.
 
 ## Output
 
@@ -82,6 +89,13 @@ If KRAKEN2 analysis is being performed, the pipeline will also output the follow
 ```classified_output.kraken``` The KRAKEN2 binary output files used to generate the report.
 
 ```classified_seqs_output_1.fq``` and ```classified_seqs_output_2.fq```, FASTQ files containing the sequences that were classified in the KRAKEN2 database.
+
+
+If SNV Analysis is being performed, the pipeline will output the following files:
+
+```seqverify_output.ann.vcf``` is the annotated VCF output of all variants present in the sample reads provided. 
+
+ ```seqverify_output_variants.tsv``` is the filtered readout prepared by SeqVerify containing information about all variants above a set severity level, along with any loss of function or homozgosity data.
 
 ## Example input and output
 
@@ -142,9 +156,5 @@ If you are running SeqVerify on a cluster or other powerful machine, you may be 
 ```seqverify --output output_name --reads_1 r1.fastq --reads_2 r2.fastq --genome genome.fa --inexact transgene1.fa transgene2.fa (--kraken --database database) --threads T --start 2```
 
 Where ```T``` is the number of threads available for the multi-threaded portion.
-
-#### Cohort 
-
-If you are running SeqVerify on multiple samples with the same underlying genome and transgene markers, you can use the ```--start 0``` option combined with ```--del_temp``` to run the pipeline up to indexing the new genome, to then halt it, manually go into the temp folder, and copy-paste the reference genome and its index into new manually created temp folders for the other samples (making sure the naming convention matches the one described in the main ```seqverify``` file). You will then be able to run ```--start 2``` for all the other samples and skip genome indexing, saving repetitive operations, time, and compute.
 
 
