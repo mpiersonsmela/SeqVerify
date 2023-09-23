@@ -147,12 +147,6 @@ Pure deletions (i.e. deletions with no insertions) can be achieved by leaving th
 
 Multiple commands are allowed in one command file, and seqverify automatically handles interactions between commands on the same chromosome (i.e. a command's coordinates changing because of a previous command), so all the end user needs to do is use the coordinates straight from their source without any adjustment or calculation. 
 
-#### Core optimization
-
-If you are running SeqVerify on a cluster or other powerful machine, you may be interested in optimizing the usage of the cores you use at one. This is where the ```--start``` flag becomes useful: instead of scheduling one ```seqverify``` command as shown above, you can call two, one with ```--start 0``` and a subsequent one with ```--start 2``` to split up the single-threaded and multi-threaded portions of the pipeline. The rest of the arguments should be able to remain the same, such that the two commands you call are:
-
-```seqverify --output output_name --reads_1 r1.fastq --reads_2 r2.fastq --genome genome.fa --inexact transgene1.fa transgene2.fa (--kraken --database database) --start 0```
-
 ```seqverify --output output_name --reads_1 r1.fastq --reads_2 r2.fastq --genome genome.fa --inexact transgene1.fa transgene2.fa (--kraken --database database) --threads T --start 2```
 
 Where ```T``` is the number of threads available for the multi-threaded portion.
