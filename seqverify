@@ -21,7 +21,7 @@ parser.add_argument('--reads_1', type=str, required=False) #Name/Path of First .
 parser.add_argument('--reads_2', type=str, required=False) #Name/Path of Second .fq file for reads
 parser.add_argument('--inexact', type=str, required=False, nargs='+') #Name/Path of transgenes to be appended to the genome as extra sequences
 parser.add_argument('--exact', type=str, required=False) #Name/Path of command file instructing where to insert known-insertion transgenes 
-parser.add_argument('--del_temp', action='store_const',const=False, required=False, default=False) #HIGHLY RECOMMENDED - Option to delete temporary files when the pipeline is done
+parser.add_argument('--keep_temp', action='store_const',const=True, required=False, default=False) #HIGHLY RECOMMENDED - Option to delete temporary files when the pipeline is done
 
 #Genome arguments
 parser.add_argument('--genome', type=str, required=False, default=f"{os.getcwd()}/seqverify_defaults/chm13v2.0.fa") #Name/Path of genome file (CHM13 recommended) used to perform everything but variant calling.
@@ -48,6 +48,8 @@ parser.add_argument('--variant_intensity',type=str,required=False,default="MODER
 
 #Other
 parser.add_argument('--download_defaults',action='store_const',const=True,required=False,default=False) #Downloads hg38.p14, CHM13 V2.0, and the PFPlus-8GB KRAKEN2 DB for ease of use. Terminates the program after doing that
+parser.add_argument('--similarity',nargs=3,type=str,required=False,default=False) #Runs the SNP similarity checker
+parser.add_argument('--min_quality',type=int,required=False,default=100 )
 
 args = parser.parse_args()
 
@@ -81,6 +83,40 @@ if args.download_defaults: #If --download_defaults is set, downloads the three d
     sys.exit(0)
 
 output_name = args.output
+
+#Stores Variable/Folder Names:
+folder = f"seqverify_{output_name}"
+temp_folder =f"seqverify_temp_{output_name}"
+marker_list_file = f"seqverify_{output_name}_transgene_list.fa"
+genome_with_markers = f"seqverify_{output_name}_collated.fa"
+aligned_with_markers = f"seqverify_{output_name}_markers.sam"
+aligned_diff_chr = f"seqverify_{output_name}_markers_diff_chr.sam"
+aligned_diff_chr_bam = f"seqverify_{output_name}_markers_diff_chr.bam"
+header = f"seqverify_{output_name}_markers_header.sam"
+overall_coverage = f"seqverify_{output_name}_markers_coverage.cov"
+pytor = f"{output_name}.pytor"
+pytor_gc = f"{output_name}_gc.pytor"
+pytor_conf = f"{output_name}_genome_conf.py"
+unaligned = f"seqverify_{output_name}_unaligned.sam"
+unaligned_R1 = f"seqverify_{output_name}_unaligned_R1.fastq"
+unaligned_R2 = f"seqverify_{output_name}_unaligned_R2.fastq"
+variant_genome_aligned = f"seqverify_{output_name}_variant.sam"
+variant_genome_aligned_bam = f"seqverify_{output_name}_variant.bam"
+variant_vcf = f"seqverify_{output_name}.vcf"
+variant_vcf_ann = f"seqverify_{output_name}.ann.vcf"
+variant_lof = f"seqverify_{output_name}_variants.tsv"
+bed_file = f"{output_name}.bed"
+vcf_similarity = f"seqverify_{output_name}_unique_snp.vcf"
+
+#Output Subdirectories:
+folder_insertion = f"{folder}/insertion"
+folder_cnv = f"{folder}/copy_number"
+folder_kraken = f"{folder}/bacterial_contamination"
+folder_snp =f"{folder}/variant_calling"
+
+if args.similarity[0] != []: #similarity also requires --output to be set, takes three arguments: first the original cell line, then the modified cell line, then the minimum severity level to compare against, --min_quality can be set to change the minimum quality (default: 100).
+    compare(args.similarity[0],args.similarity[1],args.similarity[2],args.min_quality,folder,temp_folder,vcf_similarity)
+    sys.exit(0)
 
 #The pathFinder function detects whether arguments are paths or names and acts accordingly such that it can handle both cases for ease of use.
 reads_1_path = pathFinder(args.reads_1)
@@ -118,34 +154,12 @@ base_block = max_mem / 8
 os.environ['_JAVA_OPTIONS'] = '-Xmx'+args.max_mem
 os.system('echo $_JAVA_OPTIONS')
 
-#Stores Variable/Folder Names:
-folder = f"seqverify_{output_name}"
-temp_folder =f"seqverify_temp_{output_name}"
-marker_list_file = f"seqverify_{output_name}_transgene_list.fa"
-genome_with_markers = f"seqverify_{output_name}_collated.fa"
-aligned_with_markers = f"seqverify_{output_name}_markers.sam"
-aligned_diff_chr = f"seqverify_{output_name}_markers_diff_chr.sam"
-aligned_diff_chr_bam = f"seqverify_{output_name}_markers_diff_chr.bam"
-header = f"seqverify_{output_name}_markers_header.sam"
-overall_coverage = f"seqverify_{output_name}_markers_coverage.cov"
-pytor = f"{output_name}.pytor"
-pytor_gc = f"{output_name}_gc.pytor"
-pytor_conf = f"{output_name}_genome_conf.py"
-unaligned = f"seqverify_{output_name}_unaligned.sam"
-unaligned_R1 = f"seqverify_{output_name}_unaligned_R1.fastq"
-unaligned_R2 = f"seqverify_{output_name}_unaligned_R2.fastq"
-variant_genome_aligned = f"seqverify_{output_name}_variant.sam"
-variant_genome_aligned_bam = f"seqverify_{output_name}_variant.bam"
-variant_vcf = f"seqverify_{output_name}.vcf"
-variant_vcf_ann = f"seqverify_{output_name}.ann.vcf"
-variant_lof = f"seqverify_{output_name}_variants.tsv"
-bed_file = f"{output_name}.bed"
-
 if args.start == "beginning" or args.start == "all":
-    #Preliminary Work - Generates the output folder given a specified --output string as well as the temp folder for the pipeline to work within
-    os.system(f'mkdir {folder}')
-    os.system(f'mkdir {temp_folder}')
+    #Preliminary Work - Generates the output folders given a specified --output string as well as the temp folder for the pipeline to work within
+    os.system(f'mkdir -p {folder}')
+    os.system(f'mkdir -p {temp_folder}')
 
+    os.system(f'mkdir -p {folder_insertion}')
     #Automatic Preparation of Collated Genome:
     #Collates all markers/transgenes into a single FASTA file for ease of handling
 
@@ -165,7 +179,8 @@ if args.start == "beginning" or args.start == "all":
 
      #Builds the indices for the genome that has now been augmented with the transgenes, necessary for alignment
     os.system(f'bwa index -b {base_block} {temp_folder}/{genome_with_markers}')
-    os.system(f'cp {temp_folder}/{genome_with_markers} {folder}/{genome_with_markers}')
+    os.system(f'cp {temp_folder}/{genome_with_markers} {folder_insertion}/{genome_with_markers}')
+    
     if args.keepgoing:
         print("Finished beginning, continuing to align")
         args.start = "align"
@@ -180,6 +195,7 @@ if args.start == "align" or args.start == "all":
         args.start = "markers"
     
 if args.start == "markers" or args.start == "all":
+    os.system(f'mkdir -p {folder_insertion}')
     if marker_sources_path != []:
         #Saves all names of transgenes/markers we want to find insertion sites of into a list for later usage and makes it into a string
         with open(f'{temp_folder}/{marker_list_file}') as f:
@@ -194,41 +210,44 @@ if args.start == "markers" or args.start == "all":
         #Takes "diff_chr", generates a .txt human-readable readout of the insertion sites, places it into the output folder.
         data = group(f'{temp_folder}/{aligned_diff_chr}')
         insertions = compress(data,granularity_threshold)
-        readout(folder,insertions,marker_list,min_matches)
+        readout(folder_insertion,insertions,marker_list,min_matches)
 
     #Sorts the previously-aligned SAM file to a BAM file and places it in the main output folder for both potential post-pipeline manual viewing and for later steps in the pipeline itself 
-    os.system(f"samtools sort -@ {threads} {temp_folder}/{aligned_with_markers} > {folder}/{aligned_diff_chr_bam}")
-    os.system(f"samtools index -@ {threads} {folder}/{aligned_diff_chr_bam}")
+    os.system(f"samtools sort -@ {threads} {temp_folder}/{aligned_with_markers} > {folder_insertion}/{aligned_diff_chr_bam}")
+    os.system(f"samtools index -@ {threads} {folder_insertion}/{aligned_diff_chr_bam}")
 
     #Creates a header from the BAM file
-    os.system(f'samtools view -@ {threads} -H {folder}/{aligned_diff_chr_bam} > {temp_folder}/{header}')
+    os.system(f'samtools view -@ {threads} -H {folder_insertion}/{aligned_diff_chr_bam} > {temp_folder}/{header}')
     
     if args.keepgoing:
         print("Finished markers, continuing to CNV")
         args.start = "cnv"
 
 if args.start == "cnv" or args.start == "all":
+    os.system(f'mkdir -p {folder_cnv}')
     #CNVPytor Logic/Commands, these create a .pytor file for the BAM file and go through all the steps necessary to generate a final plot of the entire genome for ease of CNV analysis
     #Refer to github.com/abyzovlab/CNVpytor/tree/master/cnvpytor for more information
+
     if commands == []:
-        os.system(f'cnvpytor -root {folder}/{pytor} -rd {folder}/{aligned_diff_chr_bam}')
-        os.system(f'cnvpytor -root {folder}/{pytor} -his {bin_size}')
-        os.system(f'cnvpytor -root {folder}/{pytor} -partition {bin_size}')
-        os.system(f'cnvpytor -root {folder}/{pytor} -call {bin_size} > {folder}/calls.{bin_size}.tsv')
-        os.system(f'cnvpytor -root {folder}/{pytor} -plot manhattan {bin_size} -o {folder}/{output_name}.png')
+        os.system(f'cnvpytor -root {folder_cnv}/{pytor} -rd {folder_insertion}/{aligned_diff_chr_bam}')
+        os.system(f'cnvpytor -root {folder_cnv}/{pytor} -his {bin_size}')
+        os.system(f'cnvpytor -root {folder_cnv}/{pytor} -partition {bin_size}')
+        os.system(f'cnvpytor -root {folder_cnv}/{pytor} -call {bin_size} > {folder_cnv}/calls.{bin_size}.tsv')
+        os.system(f'cnvpytor -root {folder_cnv}/{pytor} -plot manhattan {bin_size} -o {folder_cnv}/{output_name}.png')
     else:
         genome_configurator(temp_folder,pytor_conf,pytor_gc,genome_with_markers,header)
-        os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder}/{pytor} -rd {folder}/{aligned_diff_chr_bam}')
-        os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder}/{pytor} -his {bin_size}')
-        os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder}/{pytor} -partition {bin_size}')
-        os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder}/{pytor} -call {bin_size} > {folder}/calls.{bin_size}.tsv')
-        os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder}/{pytor} -plot manhattan {bin_size} -o {folder}/{output_name}.png')
+        os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder_cnv}/{pytor} -rd {folder_insertion}/{aligned_diff_chr_bam}')
+        os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder_cnv}/{pytor} -his {bin_size}')
+        os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder_cnv}/{pytor} -partition {bin_size}')
+        os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder_cnv}/{pytor} -call {bin_size} > {folder_cnv}/calls.{bin_size}.tsv')
+        os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder_cnv}/{pytor} -plot manhattan {bin_size} -o {folder_cnv}/{output_name}.png')
 
     if args.keepgoing:
         print("Finished CNVpytor, continuing to plots")
         args.start = "plots"
 
 if args.start == "plots" or args.start == "all":
+    os.system(f'mkdir -p {folder_cnv}')
     try:
         region_bed(temp_folder,header,commands,marker_list,bed_file) #Creates a bed file to be used as coordinates for the IGV screenshot engine.
     except NameError: #regenerate commands if the beginning step was skipped
@@ -240,14 +259,14 @@ if args.start == "plots" or args.start == "all":
     #Plotting Logic
     if not args.manual_plots:
         #If IGV plots are used (default option), creates plots of the transgenes through IGV: the .bed file here is used to direct IGV towards the relevant regions of the genome
-        igvScreenshot(temp_folder,folder,f'{folder}/{aligned_diff_chr_bam}',f'{temp_folder}/{genome_with_markers}',bed_file)
+        igvScreenshot(temp_folder,folder_cnv,f'{folder_cnv}/{aligned_diff_chr_bam}',f'{temp_folder}/{genome_with_markers}',bed_file)
     else:
         #If IGV plots are not used, creates matplotlib plots of the transgene copy numbers: the .bed file here is used to direct samtools depth towards the relevant regions to cut down time.
-        os.system(f'samtools depth -b {bed_file} {folder}/{aligned_diff_chr_bam} > {temp_folder}/{overall_coverage}')
+        os.system(f'samtools depth -b {bed_file} {folder_cnv}/{aligned_diff_chr_bam} > {temp_folder}/{overall_coverage}')
         #Creates the histograms (refer to seqver_plots.py for more information)
         chrHistograms(f'{temp_folder}/{overall_coverage}',marker_list)
         #Moves the plots and the coverage maps to the main and temp folders, respectively.
-        os.system(f'mv fig_* {folder}')
+        os.system(f'mv fig_* {folder_cnv}')
         os.system(f'mv *.cov {temp_folder}')
         
     if args.keepgoing:
@@ -255,26 +274,29 @@ if args.start == "plots" or args.start == "all":
         args.start = "kraken"
 
 if args.start == "kraken" or args.start == "all":
+    os.system(f'mkdir -p {folder_kraken}')
     #KRAKEN2/BRACKEN system
+
     if args.kraken:
         #If KRAKEN is enabled (default: not enabled), runs the KRAKEN pipeline.
         #Pulls out all unclassified reads (flag 0x13 means "paired (1), unmapped (4), mate unmapped (8)") and stores them in a SAM file
-        os.system(f'samtools view -f 13 -@ {threads} {folder}/{aligned_diff_chr_bam}> {temp_folder}/{unaligned}')
+        os.system(f'samtools view -f 13 -@ {threads} {folder_insertion}/{aligned_diff_chr_bam}> {temp_folder}/{unaligned}')
 
         #Separates the SAM file of all unaligned reads into its forward and backward reads
         os.system(f'samtools fastq -@ {threads} {temp_folder}/{unaligned} -1 {temp_folder}/{unaligned_R1} -2 {temp_folder}/{unaligned_R2}')
 
         #Runs KRAKEN2, generating a report and placing it in the main output folder
-        os.system(f'kraken2 --threads {threads} --db {database} --report {folder}/classified_seqs_{output_name}.kreport --paired --classified-out {folder}/classified_seqs_{output_name}#.fq {temp_folder}/{unaligned_R1} {temp_folder}/{unaligned_R2} > {folder}/classified_{output_name}.kraken')
+        os.system(f'kraken2 --threads {threads} --db {database} --report {folder_kraken}/classified_seqs_{output_name}.kreport --paired --classified-out {folder_kraken}/classified_seqs_{output_name}#.fq {temp_folder}/{unaligned_R1} {temp_folder}/{unaligned_R2} > {folder_kraken}/classified_{output_name}.kraken')
 
         #Runs BRACKEN, generating a report in the main output folder.  
-        os.system(f'bracken -d {database} -i {folder}/classified_seqs_{output_name}.kreport -o {folder}/classified_seqs_{output_name}.bracken -r 150')
+        os.system(f'bracken -d {database} -i {folder_kraken}/classified_seqs_{output_name}.kreport -o {folder_kraken}/classified_seqs_{output_name}.bracken -r 150')
 
     if args.keepgoing:
         print("Finished kraken, continuing to variant calling (if enabled)")
         args.start = "variant"
 
 if args.start == "variant" or args.start == "all":
+    os.system(f'mkdir -p {folder_snp}')
     if args.variant_calling is not None and args.variant_calling != []:
         ##### Do the variant calling #####
         
@@ -291,7 +313,6 @@ if args.start == "variant" or args.start == "all":
         os.system(f"samtools faidx {variant_genome_source_path}")
         
         bwa_cmd = f"bwa mem -M -t {threads} {variant_genome_source_path} {reads_1_path} {reads_2_path} > {temp_folder}/{variant_genome_aligned}"
-        #print(bwa_cmd)
         
         exitcode = os.system(bwa_cmd)
         if exitcode!=0: sys.exit("BWA failed")
@@ -306,11 +327,11 @@ if args.start == "variant" or args.start == "all":
         
         #Runs snpEff, SnpSift to do a first pass of filtering the variants, saves everything in the main folder for post-pipeline analysis
         os.system(f"snpEff -v hg38 {temp_folder}/{variant_vcf} > {temp_folder}/{variant_vcf_ann}")
-        os.system(f"SnpSift annotate -v {clinvardb_source_path} {temp_folder}/{variant_vcf_ann} > {folder}/{variant_vcf_ann}")
+        os.system(f"SnpSift annotate -v {clinvardb_source_path} {temp_folder}/{variant_vcf_ann} > {folder_snp}/{variant_vcf_ann}")
         
         #Further filter the reads, saves everything to a readout in the main folder
-        mutation_logger(folder,variant_lof,variant_vcf_ann,args.variant_intensity)
+        mutation_logger(folder_snp,variant_lof,variant_vcf_ann,args.min_quality,args.variant_intensity)
     #If deletion of files is enabled (which is it by default), deletes the temp folder.
     #This is recommended, especially since temp files contain SAM files that can get to 100+ GB depending on the size of the original inputs.
-if args.del_temp:
+if not args.keep_temp:
     os.system(f'rm -r {temp_folder}')

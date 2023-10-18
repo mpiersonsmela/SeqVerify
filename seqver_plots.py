@@ -103,7 +103,9 @@ def igvScreenshot(temp_folder,folder,alignments,genome,bed_file,imageformat="png
                 file.write(f"goto {name}:{begin}-{end}\n") #makes IGV go to the entire transgene
                 file.write(f"snapshot fig_{name}.{imageformat}\n") #takes screenshot and saves it
         file.write("exit") #boilerplate
-    os.system(f"xvfb-run --auto-servernum --server-args=\"-screen 0, 2048x1536x24\" igv -b {temp_folder}/seqverify_igv.bat") #runs XVFB, a headerless server emulator, to run IGV automatically without the need for a GUI.
+    igv_cmd = f"xvfb-run --auto-servernum --server-args=\"-screen 0, 2048x1536x24\" igv -b {temp_folder}/seqverify_igv.bat"
+    print(igv_cmd) # for debug
+    os.system(igv_cmd) #runs XVFB, a headerless server emulator, to run IGV automatically without the need for a GUI.
 
 def genome_configurator(temp_folder,pytor_conf,gc_name,genome,sam_header):
     special_chrs = {"chrX":"S","chrY":"S","chrM":"M"}
