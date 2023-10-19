@@ -206,10 +206,5 @@ def compare(vcf_1,vcf_2,severity,min_quality,folder,temp_folder,output_file):
                             else:
                                 intersection += 1
     os.system(f"mv {temp_folder}/dir/0001.vcf {folder}/{output_file}")
-    plt.hist(qual_scores, bins=[i for i in range(0,250,10)])
-    plt.title(f"SNP Quality Histogram in {output_file}")
-    plt.xlabel("Quality Score")
-    plt.ylabel("Frequency")
-    plt.savefig("seqverify_snp_quality.png")
     print(f"Jaccard similarity between {vcf_1} and {vcf_2}: {round(intersection/union,2)}")
 

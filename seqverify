@@ -111,7 +111,7 @@ vcf_similarity = f"seqverify_{output_name}_unique_snp.vcf"
 #Output Subdirectories:
 folder_insertion = f"{folder}/insertion"
 folder_cnv = f"{folder}/copy_number"
-folder_kraken = f"{folder}/bacterial_contamination"
+folder_kraken = f"{folder}/kraken"
 folder_snp =f"{folder}/variant_calling"
 
 if args.similarity[0] != []: #similarity also requires --output to be set, takes three arguments: first the original cell line, then the modified cell line, then the minimum severity level to compare against, --min_quality can be set to change the minimum quality (default: 100).
