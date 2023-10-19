@@ -114,7 +114,7 @@ folder_cnv = f"{folder}/copy_number"
 folder_kraken = f"{folder}/kraken"
 folder_snp =f"{folder}/variant_calling"
 
-if args.similarity[0] != []: #similarity also requires --output to be set, takes three arguments: first the original cell line, then the modified cell line, then the minimum severity level to compare against, --min_quality can be set to change the minimum quality (default: 100).
+if args.similarity is not None: #similarity also requires --output to be set, takes three arguments: first the original cell line, then the modified cell line, then the minimum severity level to compare against, --min_quality can be set to change the minimum quality (default: 100).
     compare(args.similarity[0],args.similarity[1],args.similarity[2],args.min_quality,folder,temp_folder,vcf_similarity)
     sys.exit(0)
 
