@@ -11,8 +11,9 @@ def mutation_logger(folder,output_file,VCF_file, min_quality, min_intensity="MOD
                 if not line.startswith("#"):
                     fields = line.split("\t")
                     coords,quality,annotations,genotype = ":".join(fields[0:2]),fields[5],fields[7].split(";"),fields[-1].split(":")[0]
+                    quality = float(quality)
                     qual_scores.append(quality)
-                    if quality >= min_quality:
+                    if quality >= float(min_quality):
                         homozygous = (len(set(genotype.split("/"))) == 1)
                         
                         relevant = [i for i in annotations if i.startswith("ANN") or i.startswith("LOF")]
