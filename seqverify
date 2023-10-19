@@ -48,7 +48,7 @@ parser.add_argument('--variant_intensity',type=str,required=False,default="MODER
 
 #Other
 parser.add_argument('--download_defaults',action='store_const',const=True,required=False,default=False) #Downloads hg38.p14, CHM13 V2.0, and the PFPlus-8GB KRAKEN2 DB for ease of use. Terminates the program after doing that
-parser.add_argument('--similarity',nargs=3,type=str,required=False,default=False) #Runs the SNP similarity checker
+parser.add_argument('--similarity',nargs=3,type=str,required=False) #Runs the SNP similarity checker
 parser.add_argument('--min_quality',type=int,required=False,default=100 )
 
 args = parser.parse_args()
