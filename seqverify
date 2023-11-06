@@ -48,8 +48,8 @@ parser.add_argument('--variant_intensity',type=str,required=False,default="MODER
 
 #Other
 parser.add_argument('--download_defaults',action='store_const',const=True,required=False,default=False) #Downloads hg38.p14, CHM13 V2.0, and the PFPlus-8GB KRAKEN2 DB for ease of use. Terminates the program after doing that
-parser.add_argument('--similarity',nargs=3,type=str,required=False) #Runs the SNP similarity checker
-parser.add_argument('--min_quality',type=int,required=False,default=100 )
+parser.add_argument('--similarity',nargs=2,type=str,required=False) #Runs the SNP similarity checker
+parser.add_argument('--min_quality',type=int,required=False,default=3 )
 
 args = parser.parse_args()
 
@@ -106,7 +106,7 @@ variant_vcf = f"seqverify_{output_name}.vcf"
 variant_vcf_ann = f"seqverify_{output_name}.ann.vcf"
 variant_lof = f"seqverify_{output_name}_variants.tsv"
 bed_file = f"{output_name}.bed"
-vcf_similarity = f"seqverify_{output_name}_unique_snp.vcf"
+vcf_similarity = f"seqverify_{output_name}_bcfstats.txt"
 
 #Output Subdirectories:
 folder_insertion = f"{folder}/insertion"
@@ -114,8 +114,8 @@ folder_cnv = f"{folder}/copy_number"
 folder_kraken = f"{folder}/kraken"
 folder_snp =f"{folder}/variant_calling"
 
-if args.similarity is not None: #similarity also requires --output to be set, takes three arguments: first the original cell line, then the modified cell line, then the minimum severity level to compare against, --min_quality can be set to change the minimum quality (default: 100).
-    compare(args.similarity[0],args.similarity[1],args.similarity[2],args.min_quality,folder,temp_folder,vcf_similarity)
+if args.similarity is not None: #similarity also requires --output to be set, takes two arguments: first the original cell line, then the modified cell line, then --min_quality can be set to change the minimum quality (default: 100).
+    compare(args.similarity[0],args.similarity[1],args.min_quality,temp_folder,folder,vcf_similarity)
     sys.exit(0)
 
 #The pathFinder function detects whether arguments are paths or names and acts accordingly such that it can handle both cases for ease of use.
@@ -259,14 +259,14 @@ if args.start == "plots" or args.start == "all":
     #Plotting Logic
     if not args.manual_plots:
         #If IGV plots are used (default option), creates plots of the transgenes through IGV: the .bed file here is used to direct IGV towards the relevant regions of the genome
-        igvScreenshot(temp_folder,folder_cnv,f'{folder_cnv}/{aligned_diff_chr_bam}',f'{temp_folder}/{genome_with_markers}',bed_file)
+        igvScreenshot(temp_folder,folder_insertion,f'{folder_insertion}/{aligned_diff_chr_bam}',f'{temp_folder}/{genome_with_markers}',bed_file)
     else:
         #If IGV plots are not used, creates matplotlib plots of the transgene copy numbers: the .bed file here is used to direct samtools depth towards the relevant regions to cut down time.
-        os.system(f'samtools depth -b {bed_file} {folder_cnv}/{aligned_diff_chr_bam} > {temp_folder}/{overall_coverage}')
+        os.system(f'samtools depth -b {bed_file} {folder_insertion}/{aligned_diff_chr_bam} > {temp_folder}/{overall_coverage}')
         #Creates the histograms (refer to seqver_plots.py for more information)
         chrHistograms(f'{temp_folder}/{overall_coverage}',marker_list)
         #Moves the plots and the coverage maps to the main and temp folders, respectively.
-        os.system(f'mv fig_* {folder_cnv}')
+        os.system(f'mv fig_* {folder_insertion}')
         os.system(f'mv *.cov {temp_folder}')
         
     if args.keepgoing:
