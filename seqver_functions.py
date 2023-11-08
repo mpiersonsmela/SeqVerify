@@ -182,15 +182,15 @@ def readout(folder,insertion_dict, chr_filter, min_matches=1):
                                 file.write('\t'+'\t'+str(site)+": "+str(repetitions)+" matched\n") #adds nonchimeric (potentially non-exaxt insertion sites) and their location
                         else:
                             continue
-
+""" 
 def compare(vcf_1,vcf_2,severity,min_quality,folder,temp_folder,output_file):
     union, intersection = 0, 0
     qual_scores = []
     levels = ["MODIFIER","LOW","MODERATE","HIGH"]
     min_index = levels.index(severity)
     for vcf in [vcf_1,vcf_2]:
-        os.system(f"gzip -k -f {vcf} > {temp_folder}/{vcf}.gz")
-        os.system(f"bgzip -f {temp_folder}/{vcf}.gz")
+        os.system(f"bgzip -f {vcf}")
+        os.system(f"mv {vcf}.gz {temp_folder}")
         os.system(f"bcftools index {temp_folder}/{vcf}.gz")
     os.system(f"bcftools isec -p {temp_folder}/dir {temp_folder}/{vcf_1}.gz {temp_folder}/{vcf_2}.gz")
     for i in range(4):
@@ -206,5 +206,24 @@ def compare(vcf_1,vcf_2,severity,min_quality,folder,temp_folder,output_file):
                             else:
                                 intersection += 1
     os.system(f"mv {temp_folder}/dir/0001.vcf {folder}/{output_file}")
-    print(f"Jaccard similarity between {vcf_1} and {vcf_2}: {round(intersection/union,2)}")
+    print(f"Jaccard similarity between {vcf_1} and {vcf_2}: {round(intersection/union,2)}") """
 
+def compare(vcf_1, vcf_2, min_quality, temp_folder, folder, stats, isec):
+    for vcf in [vcf_1,vcf_2]:
+        os.system(f"bgzip -f {vcf}")
+        os.system(f"mv {vcf}.gz {temp_folder}")
+        os.system(f"bcftools index {temp_folder}/{vcf}.gz")
+    os.system(f"bcftools stats {temp_folder}/{vcf_1}.gz {temp_folder}/{vcf_2}.gz > {folder}/{stats}")
+    id_dict = {'0':0,'1':0,'2':0}
+    with open(f"{folder}/{stats}","r") as scores:
+        for line in scores:
+            if line.startswith("QUAL"):
+                fields = line.split("\t")
+                id, quality, freq = fields[1], fields[2], fields[3]
+                if int(quality) >= min_quality:
+                    id_dict[id] += int(freq)
+    jaccard = str((id_dict['2'])/(id_dict['0']+id_dict['1']+id_dict['2']))
+    with open(f"{folder}/{stats}","a") as scores:
+        scores.write(f"The Jaccard similarity between {vcf_1} and {vcf_2} is {jaccard}")
+    os.system(f"bcftools isec -p {temp_folder}/dir {temp_folder}/{vcf_1}.gz {temp_folder}/{vcf_2}.gz")
+    os.system(f"mv {temp_folder}/dir/0001.vcf {folder}/{isec}")
