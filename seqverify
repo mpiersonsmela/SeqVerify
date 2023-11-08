@@ -154,12 +154,14 @@ base_block = max_mem / 8
 os.environ['_JAVA_OPTIONS'] = '-Xmx'+args.max_mem
 os.system('echo $_JAVA_OPTIONS')
 
+
 if args.start == "beginning" or args.start == "all":
     #Preliminary Work - Generates the output folders given a specified --output string as well as the temp folder for the pipeline to work within
     os.system(f'mkdir -p {folder}')
     os.system(f'mkdir -p {temp_folder}')
 
     os.system(f'mkdir -p {folder_insertion}')
+
     #Automatic Preparation of Collated Genome:
     #Collates all markers/transgenes into a single FASTA file for ease of handling
 
@@ -180,7 +182,6 @@ if args.start == "beginning" or args.start == "all":
      #Builds the indices for the genome that has now been augmented with the transgenes, necessary for alignment
     os.system(f'bwa index -b {base_block} {temp_folder}/{genome_with_markers}')
     os.system(f'cp {temp_folder}/{genome_with_markers} {folder_insertion}/{genome_with_markers}')
-    
     if args.keepgoing:
         print("Finished beginning, continuing to align")
         args.start = "align"
