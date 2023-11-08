@@ -1,5 +1,6 @@
 import re
 import os
+import matplotlib.pyplot as plt
 
 supp_tags = ['SA','XA'] #sets the two possible optional alignments, chimeric and split respectively
 
@@ -182,4 +183,28 @@ def readout(folder,insertion_dict, chr_filter, min_matches=1):
                         else:
                             continue
 
+def compare(vcf_1,vcf_2,severity,min_quality,folder,temp_folder,output_file):
+    union, intersection = 0, 0
+    qual_scores = []
+    levels = ["MODIFIER","LOW","MODERATE","HIGH"]
+    min_index = levels.index(severity)
+    for vcf in [vcf_1,vcf_2]:
+        os.system(f"gzip -k -f {vcf} > {temp_folder}/{vcf}.gz")
+        os.system(f"bgzip -f {temp_folder}/{vcf}.gz")
+        os.system(f"bcftools index {temp_folder}/{vcf}.gz")
+    os.system(f"bcftools isec -p {temp_folder}/dir {temp_folder}/{vcf_1}.gz {temp_folder}/{vcf_2}.gz")
+    for i in range(4):
+        with open(f"{temp_folder}/dir/000{i}.vcf","r") as jaccard:
+            for line in jaccard:
+                if not line.startswith("#"):
+                    if line.split("\t")[7].split("|")[2] in levels[min_index:]:
+                        quality = float(line.split("\t")[5])
+                        qual_scores.append(quality)
+                        if quality >= min_quality:
+                            if i <= 2:
+                                union += 1
+                            else:
+                                intersection += 1
+    os.system(f"mv {temp_folder}/dir/0001.vcf {folder}/{output_file}")
+    print(f"Jaccard similarity between {vcf_1} and {vcf_2}: {round(intersection/union,2)}")
 
