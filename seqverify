@@ -7,6 +7,7 @@ from seqver_functions import *
 from seqver_plots import *
 from seqver_genomeupdate import *
 from seqver_lofFinder import *
+from seqver_gtf import *
 
 parser = argparse.ArgumentParser()
 
@@ -19,12 +20,13 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--output', type=str, required=False, default="output") #Name of the output folder
 parser.add_argument('--reads_1', type=str, required=False) #Name/Path of First .fq file for reads
 parser.add_argument('--reads_2', type=str, required=False) #Name/Path of Second .fq file for reads
-parser.add_argument('--inexact', type=str, required=False, nargs='+') #Name/Path of transgenes to be appended to the genome as extra sequences
-parser.add_argument('--exact', type=str, required=False) #Name/Path of command file instructing where to insert known-insertion transgenes 
+parser.add_argument('--untargeted', type=str, required=False, nargs='+') #Name/Path of transgenes to be appended to the genome as extra sequences
+parser.add_argument('--targeted', type=str, required=False) #Name/Path of command file instructing where to insert known-insertion transgenes
 parser.add_argument('--keep_temp', action='store_const',const=True, required=False, default=False) #HIGHLY RECOMMENDED - Option to delete temporary files when the pipeline is done
 
 #Genome arguments
 parser.add_argument('--genome', type=str, required=False, default=f"{os.getcwd()}/seqverify_defaults/chm13v2.0.fa") #Name/Path of genome file (CHM13 recommended) used to perform everything but variant calling.
+parser.add_argument('--gtf', type=str, required=False) #Name/Path of GTF file for editing
 
 #KRAKEN2 arguments
 parser.add_argument('--kraken', action='store_const',const=True, required=False,default=False) #Flag enabling KRAKEN2/BRACKEN analysis
@@ -37,6 +39,7 @@ parser.add_argument('--max_mem', type=str, required=False, default='16G') #Max m
 parser.add_argument('--min_matches', type=int, required=False,default=1) #How many times an insertion needs to align to the reference genome to show up in the readout
 parser.add_argument('--start', type=str, required=False, default="beginning") #Check GitHub, TL;DR: Setting this to "1" will only run the single-threaded portion of the pipeline, "2" will only run the multi-threaded portion
 parser.add_argument('--keepgoing',action='store_const',const=True,required=False,default=True) #continue to next part after completing
+parser.add_argument('--mitochondrial',action='store_const',const=True,required=False,default=False) #continue to next part after completing
 
 #CNV/Plotting Arguments
 parser.add_argument('--manual_plots',action='store_const',const=True,required=False,default=False) #Flag enabling matplotlib plots instead of IGV plots 
@@ -108,6 +111,8 @@ variant_lof = f"seqverify_{output_name}_variants.tsv"
 bed_file = f"{output_name}.bed"
 vcf_similarity = f"seqverify_{output_name}_bcfstats.txt"
 vcf_isec = f"seqverify_{output_name}_unique.vcf"
+new_gtf_unsorted = f"seqverify_{output_name}_unsorted.gtf"
+new_gtf_sorted = f"seqverify_{output_name}.gtf"
 
 #Output Subdirectories:
 folder_insertion = f"{folder}/insertion"
@@ -124,12 +129,31 @@ reads_1_path = pathFinder(args.reads_1)
 reads_2_path = pathFinder(args.reads_2)
 genome_source_path = pathFinder(args.genome)
 
-marker_sources_path = [pathFinder(i) for i in args.inexact]
-exact_path = pathFinder(args.exact)
+marker_sources_path = None
+exact_path = None
+database = None
+gtf_file = None
+gtf = None
 
 granularity_threshold = args.granularity
+
+if args.untargeted != None:
+    marker_sources_path = [pathFinder(i) for i in args.untargeted]
+
+if args.targeted != None:
+    exact_path = pathFinder(args.targeted)
+
 if args.database != None:
     database = pathFinder(args.database)
+
+if args.gtf != None:
+    gtf_file = pathFinder(args.gtf)
+    
+os.system(f'mkdir -p {folder}')
+os.system(f'mkdir -p {temp_folder}')    
+
+if exact_path is not None:
+    commands = commandHandler(genome_source_path,exact_path,temp_folder,genome_with_markers,return_commands_only = False)
 
 min_matches = args.min_matches
 bin_size = args.bin_size
@@ -157,28 +181,28 @@ os.system('echo $_JAVA_OPTIONS')
 
 if args.start == "beginning" or args.start == "all":
     #Preliminary Work - Generates the output folders given a specified --output string as well as the temp folder for the pipeline to work within
-    os.system(f'mkdir -p {folder}')
-    os.system(f'mkdir -p {temp_folder}')
-
     os.system(f'mkdir -p {folder_insertion}')
     #Automatic Preparation of Collated Genome:
     #Collates all markers/transgenes into a single FASTA file for ease of handling
-
-    if exact_path != None:
-        commands = commandHandler(genome_source_path,exact_path,temp_folder,genome_with_markers)
     
-    if marker_sources_path != []:
-        if exact_path == None:
+    print("started gtf")
+    if args.gtf is not None:
+        gtfEdit(gtf_file, commands, temp_folder, folder_insertion, new_gtf_unsorted, new_gtf_sorted)
+    
+    if marker_sources_path is not None:
+        if exact_path is None:
             #Copies the reference genome into a new FASTA file that the transgenes will also be added to
             os.system(f'cp {genome_source_path} {temp_folder}/{genome_with_markers}')
 
         for file in marker_sources_path: 
+            print(f'COMMAND FOR MARKER SOURCES PATH: echo "$(cat {file})" >> {temp_folder}/{marker_list_file}') #DEBUG
             os.system(f'echo "$(cat {file})" >> {temp_folder}/{marker_list_file}') 
 
         #Adds the transgenes to the new "collated" FASTA file
+        print(f'ADDING TO COLLATED FILE: echo "$(cat {temp_folder}/{marker_list_file})" >> {temp_folder}/{genome_with_markers}') #DEBUG
         os.system(f'echo "$(cat {temp_folder}/{marker_list_file})" >> {temp_folder}/{genome_with_markers}')
 
-     #Builds the indices for the genome that has now been augmented with the transgenes, necessary for alignment
+    #Builds the indices for the genome that has now been augmented with the transgenes, necessary for alignment
     os.system(f'bwa index -b {base_block} {temp_folder}/{genome_with_markers}')
     os.system(f'cp {temp_folder}/{genome_with_markers} {folder_insertion}/{genome_with_markers}')
     
@@ -205,20 +229,33 @@ if args.start == "markers" or args.start == "all":
     
         #Uses the "markers" string as a regular expression to find reads in the newly-aligned SAM file that align to a transgene and have a mate on a human chromosome
         #Exports these reads into a new SAM file, "diff_chr"
-        os.system(f"samtools view -h -@ {threads} {temp_folder}/{aligned_with_markers} |gawk '{{if ((($3 ~ /^({markers})/)&&($7 ~ /chr([0-9]+|[XYM])/))||($1 ~ /^@/)) print $0}};' > {temp_folder}/{aligned_diff_chr}")
+        if args.mitochondrial:
+            markers += "|chrM"
 
-        #Functions imported from seqver_functions, refer to comments there for details on their functioning.
-        #Takes "diff_chr", generates a .txt human-readable readout of the insertion sites, places it into the output folder.
-        data = group(f'{temp_folder}/{aligned_diff_chr}')
-        insertions = compress(data,granularity_threshold)
-        readout(folder_insertion,insertions,marker_list,min_matches)
+            os.system(f"samtools view -h -@ {threads} {temp_folder}/{aligned_with_markers} |gawk '{{if ((($3 ~ /^({markers})/)&&($7 ~ /chr([0-9]+|[XY])/))||($1 ~ /^@/)) print $0}};' > {temp_folder}/{aligned_diff_chr}")
+        else:
+            os.system(f"samtools view -h -@ {threads} {temp_folder}/{aligned_with_markers} |gawk '{{if ((($3 ~ /^({markers})/)&&($7 ~ /chr([0-9]+|[XYM])/))||($1 ~ /^@/)) print $0}};' > {temp_folder}/{aligned_diff_chr}")
 
-    #Sorts the previously-aligned SAM file to a BAM file and places it in the main output folder for both potential post-pipeline manual viewing and for later steps in the pipeline itself 
-    os.system(f"samtools sort -@ {threads} {temp_folder}/{aligned_with_markers} > {folder_insertion}/{aligned_diff_chr_bam}")
-    os.system(f"samtools index -@ {threads} {folder_insertion}/{aligned_diff_chr_bam}")
+        #Sorts the previously-aligned SAM file to a BAM file and places it in the main output folder for both potential post-pipeline manual viewing and for later steps in the pipeline itself 
+        os.system(f"samtools sort -@ {threads} {temp_folder}/{aligned_with_markers} > {folder_insertion}/{aligned_diff_chr_bam}")
+        os.system(f"samtools index -@ {threads} {folder_insertion}/{aligned_diff_chr_bam}")
 
-    #Creates a header from the BAM file
-    os.system(f'samtools view -@ {threads} -H {folder_insertion}/{aligned_diff_chr_bam} > {temp_folder}/{header}')
+        #Creates a header from the BAM file
+        os.system(f'samtools view -@ {threads} -H {folder_insertion}/{aligned_diff_chr_bam} > {temp_folder}/{header}')
+    
+    if args.keepgoing:
+        print("Finished markers, continuing to readout")
+        args.start = "readout"
+        
+if args.start == "readout" or args.start == "all": #lines 244-249 have been unindented by one level to accomodate this new start setting.
+    with open(f'{temp_folder}/{marker_list_file}') as f: #also i added this
+        marker_list = [i[1:].strip() for i in f if i.startswith('>')] #and this
+    #Functions imported from seqver_functions, refer to comments there for details on their functioning.
+    #Takes "diff_chr", generates a .txt human-readable readout of the insertion sites, places it into the output folder.
+    data = group(f'{temp_folder}/{aligned_diff_chr}')
+    insertions = compress(data,granularity_threshold)
+    filteredInsertions = filterAndScore(temp_folder,folder_insertion,aligned_diff_chr_bam,insertions,genome_source_path,10)
+    readout(folder_insertion,filteredInsertions[1],filteredInsertions[0],marker_list,min_matches)
     
     if args.keepgoing:
         print("Finished markers, continuing to CNV")
@@ -252,7 +289,7 @@ if args.start == "plots" or args.start == "all":
     try:
         region_bed(temp_folder,header,commands,marker_list,bed_file) #Creates a bed file to be used as coordinates for the IGV screenshot engine.
     except NameError: #regenerate commands if the beginning step was skipped
-        commands = commandHandler(genome_source_path,exact_path,temp_folder,genome_with_markers)
+        commands = commandHandler(genome_source_path,exact_path,temp_folder,genome_with_markers, return_commands_only = True)
         with open(f'{temp_folder}/{marker_list_file}') as f:
             marker_list = [i[1:].strip() for i in f if i.startswith('>')]
         markers = "|".join(marker_list)
@@ -260,7 +297,9 @@ if args.start == "plots" or args.start == "all":
     #Plotting Logic
     if not args.manual_plots:
         #If IGV plots are used (default option), creates plots of the transgenes through IGV: the .bed file here is used to direct IGV towards the relevant regions of the genome
-        igvScreenshot(temp_folder,folder_insertion,f'{folder_insertion}/{aligned_diff_chr_bam}',f'{temp_folder}/{genome_with_markers}',bed_file)
+        if args.gtf is not None:
+            gtf = f"{folder_insertion}/{new_gtf_sorted}"
+        igvScreenshot_new(temp_folder,folder_insertion,f'{folder_insertion}/{aligned_diff_chr_bam}',f'{temp_folder}/{genome_with_markers}',bed_file, gtf_file=gtf)
     else:
         #If IGV plots are not used, creates matplotlib plots of the transgene copy numbers: the .bed file here is used to direct samtools depth towards the relevant regions to cut down time.
         os.system(f'samtools depth -b {bed_file} {folder_insertion}/{aligned_diff_chr_bam} > {temp_folder}/{overall_coverage}')
