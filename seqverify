@@ -26,7 +26,7 @@ parser.add_argument('--keep_temp', action='store_const',const=True, required=Fal
 
 #Genome arguments
 parser.add_argument('--genome', type=str, required=False, default=f"{os.getcwd()}/seqverify_defaults/chm13v2.0.fa") #Name/Path of genome file (CHM13 recommended) used to perform everything but variant calling.
-parser.add_argument('--gtf', type=str, required=False) #Name/Path of GTF file for editing
+parser.add_argument('--gtf', type=str, required=False, default=f"{os.getcwd()}/seqverify_defaults/chm13v2.0_RefSeq_Liftoff_v5.1.gff3") #Name/Path of GTF file for editing
 
 #KRAKEN2 arguments
 parser.add_argument('--kraken', action='store_const',const=True, required=False,default=False) #Flag enabling KRAKEN2/BRACKEN analysis
@@ -66,6 +66,10 @@ if args.download_defaults: #If --download_defaults is set, downloads the three d
     os.system('curl -OJX GET "https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/analysis_set/chm13v2.0.fa.gz" --output-dir seqverify_defaults')
     os.system('gunzip seqverify_defaults/chm13v2.0.fa.gz')
 
+    #Downloads chm13v2.0's gff3 file for gtf editing
+    os.system('curl -OJX GET "https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/annotation/chm13v2.0_RefSeq_Liftoff_v5.1.gff3.gz" --output-dir seqverify_defaults')
+    os.system('gunzip chm13v2.0_RefSeq_Liftoff_v5.1.gff3.gz')
+
     #Downloads hg38 as a reference genome for the variant calling
     os.system('curl -OJX GET "http://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/latest/hg38.fa.gz" --output-dir seqverify_defaults')
     os.system('gunzip seqverify_defaults/hg38.fa.gz')
@@ -82,6 +86,7 @@ if args.download_defaults: #If --download_defaults is set, downloads the three d
     os.system('curl -OJX GET "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz" --output-dir seqverify_defaults')
     os.system('curl -OJX GET "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz.tbi" --output-dir seqverify_defaults')
     os.system('gunzip seqverify_defaults/clinvar.vcf.gz')
+    
 
     sys.exit(0)
 
