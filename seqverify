@@ -68,7 +68,7 @@ if args.download_defaults: #If --download_defaults is set, downloads the three d
 
     #Downloads chm13v2.0's gff3 file for gtf editing
     os.system('curl -OJX GET "https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/annotation/chm13v2.0_RefSeq_Liftoff_v5.1.gff3.gz" --output-dir seqverify_defaults')
-    os.system('gunzip chm13v2.0_RefSeq_Liftoff_v5.1.gff3.gz')
+    os.system('gunzip seqverify_defaults/chm13v2.0_RefSeq_Liftoff_v5.1.gff3.gz')
 
     #Downloads hg38 as a reference genome for the variant calling
     os.system('curl -OJX GET "http://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/latest/hg38.fa.gz" --output-dir seqverify_defaults')
