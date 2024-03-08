@@ -119,11 +119,11 @@ def igvScreenshot(temp_folder,folder,alignments,genome,bed_file,imageformat="png
     
 def igvScreenshot_new(temp_folder,folder,alignments,genome,bed_file,imageformat="png",gtf_file=None): #If using IGV, deals with IGV logic
     if gtf_file != None:
-        cmd_str = f"create_report {temp_folder}/{bed_file} --fasta {genome} --standalone --flanking 1000 --sequence 1 --begin 2 --end 3 --tracks {alignments} {folder}/{gtf_file}"
+        cmd_str = f"create_report {temp_folder}/{bed_file} --fasta {genome} --standalone --flanking 1000 --sequence 1 --begin 2 --end 3 --tracks {alignments} {folder}/{gtf_file} --output {folder}/igv_viewer.html"
         print(cmd_str)
         os.system(cmd_str)
     else:
-        cmd_str = f"create_report {temp_folder}/{bed_file} --fasta {genome} --standalone --flanking 1000 --sequence 1 --begin 2 --end 3 --tracks {alignments}"
+        cmd_str = f"create_report {temp_folder}/{bed_file} --fasta {genome} --standalone --flanking 1000 --sequence 1 --begin 2 --end 3 --tracks {alignments} --output {folder}/igv_viewer.html"
         print(cmd_str)
         os.system(cmd_str)
 
