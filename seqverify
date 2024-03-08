@@ -11,10 +11,6 @@ from seqver_gtf import *
 
 parser = argparse.ArgumentParser()
 
-#Sample call:
-#seqverify --output S04 --reads_1 S04_1.fastq --reads_2 S04_2.fastq --genome chm13v2.0.fa --inexact T2A-mGreenLantern.fa T2A-tdTomato.fa transposons_in_S04.fa unwanted_plasmids.fa --granularity 500 --threads 15
-#seqverify --output c5 --reads_1 chr5_1.fastq --reads_2 chr5_2.fastq --genome chr5_original.fa  --exact commands.txt --threads 15 --max_mem 8G
-
 #Parses commandline arguments:
 #Main arguments
 parser.add_argument('--output', type=str, required=False, default="output") #Name of the output folder
@@ -38,7 +34,7 @@ parser.add_argument('--threads',type=int,required=False, default=1) #How many th
 parser.add_argument('--max_mem', type=str, required=False, default='16G') #Max memory allowed, ending in capital "G" or "M"
 parser.add_argument('--min_matches', type=int, required=False,default=1) #How many times an insertion needs to align to the reference genome to show up in the readout
 parser.add_argument('--start', type=str, required=False, default="beginning") #Check GitHub, TL;DR: Setting this to "1" will only run the single-threaded portion of the pipeline, "2" will only run the multi-threaded portion
-parser.add_argument('--keepgoing',action='store_const',const=True,required=False,default=True) #continue to next part after completing
+parser.add_argument('--keepgoing',action='store_const',const=True,required=False,default=False) #continue to next part after completing
 parser.add_argument('--mitochondrial',action='store_const',const=True,required=False,default=False) #continue to next part after completing
 
 #CNV/Plotting Arguments
@@ -87,7 +83,6 @@ if args.download_defaults: #If --download_defaults is set, downloads the three d
     os.system('curl -OJX GET "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz.tbi" --output-dir seqverify_defaults')
     os.system('gunzip seqverify_defaults/clinvar.vcf.gz')
     
-
     sys.exit(0)
 
 output_name = args.output
@@ -303,8 +298,8 @@ if args.start == "plots" or args.start == "all":
     if not args.manual_plots:
         #If IGV plots are used (default option), creates plots of the transgenes through IGV: the .bed file here is used to direct IGV towards the relevant regions of the genome
         if args.gtf is not None:
-            gtf = f"{folder_insertion}/{new_gtf_sorted}"
-        igvScreenshot_new(temp_folder,folder_insertion,f'{folder_insertion}/{aligned_diff_chr_bam}',f'{temp_folder}/{genome_with_markers}',bed_file, gtf_file=gtf)
+            gtf = new_gtf_sorted #don't put {folder_insertion} at the front
+        igvScreenshot_new(temp_folder,folder_insertion,f'{folder_insertion}/{aligned_diff_chr_bam}',f'{folder_insertion}/{genome_with_markers}',bed_file, gtf_file=gtf)
     else:
         #If IGV plots are not used, creates matplotlib plots of the transgene copy numbers: the .bed file here is used to direct samtools depth towards the relevant regions to cut down time.
         os.system(f'samtools depth -b {bed_file} {folder_insertion}/{aligned_diff_chr_bam} > {temp_folder}/{overall_coverage}')
