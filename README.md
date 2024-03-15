@@ -39,30 +39,42 @@ seqverify --output output_name --reads_1 sample_1.fastq --reads_2 sample_2.fastq
 SeqVerify has the following standard arguments:
 * ```--output``` (Type: String) Used as the identifying name for all the files and folders to do with the particular call. E.g. ```--output Sample1``` will cause the output folder to be named "seqverify_Sample1"
 * ```--reads_1``` and ```--reads_2``` (Type: String/Path) The paired-read FASTA/FASTQ, or gzipped FASTA/FASTQ source files for the reads. Also accepts paths to the files if they're not in the working folder.
-* ```--genome``` (Type: String/Path) Name or path of FASTA file to be used as reference genome for the reads (e.g. [CHM13](https://github.com/marbl/CHM13#downloads)).
-* ```--inexact``` (Type: String/Path) Names or paths of FASTA files containing the sequences of the markers to detect (transgenes, unwanted plasmids, etc.). Accepts more than one if necessary, space-separated. Can also be left blank; not mutually exclusive with ```--exact```. 
-* ```--exact``` (Type: String/Path) Name or path to a valid command file for insertion of markers where the insertion site is known. Further details on the construction of a valid command files are given below. Only accepts one command file (but a command file can have multiple commands, so this will not restrict analysis). Can be left blank; not mutually exclusive with ```--inexact```. 
+* ```--genome``` (Type: String/Path) Name or path of FASTA file to be used as reference genome for the reads (e.g. [CHM13](https://github.com/marbl/CHM13#downloads)). If not included, will default to CHM13v2.0, downloaded through ```--download-defaults```.
+* ```--untargeted``` (Type: String/Path) Names or paths of FASTA files containing the sequences of the markers to detect (transgenes, unwanted plasmids, etc.). Accepts more than one if necessary, space-separated. Can also be left blank; not mutually exclusive with ```--targeted```. 
+* ```--targeted``` (Type: String/Path) Name or path to a valid command file for insertion of markers where the insertion site is known. Further details on the construction of a valid command files are given below. Only accepts one command file (but a command file can have multiple commands, so this will not restrict analysis). Can be left blank; not mutually exclusive with ```--untargeted```.
+* ```--gtf``` (Type: String/Path) Name or path to valid GTF/GFF3 file for the genome used, to be updated with the exact edits specified in ```--targeted```. If not included, will default to ```--download-defaults```'s GFF3 file for CHM13v2.0.
 
 SeqVerify has the following optional arguments:
 ##### Performance
 * ```--threads``` (Type: Integer) Determines how many CPU threads are used in the multithreaded portion of the pipeline. Set to 1 by default.
 * ```--max_mem``` (Type: String) Determines what the maximum amount of memory to be used in the indexing of the reference genome should be. Expects an integer followed by "M" or "G" (case-sensitive) for "Megabytes" or "Gigabytes" respectively. Set by default to "16G", 16 Gigabytes.
-* ```--start``` (Type: String) Determines where the pipeline starts. Can be set to "beginning" (the default option, runs the entire pipeline), "align" (skips the creation of the augmented genome and the output folders to start at the alignment process), "markers" (skips to the creation of the insertion site readout), "cnv" (skips to the CNV analysis), "plots" (skips to the generation of the CNV plots), "kraken" (skips to the microbial contamination analysis), "variant" (skips to SNV analysis). This option may be useful for core optimization on clusters: e.g. "beginning" is a single-core operation, "align" is a multi-core operation, so on a job scheduler a user could set a job dependent on the other and only use multiple cores when rquired. It may also be used to avoid having to restart the pipeline from scratch should the hardware or the software fail for any reason, or to perform further analysis on data that SeqVerify has already process (e.g. add KRAKEN2 analysis when it wasn't initially requested).
+* ```--start``` (Type: String) Determines where the pipeline starts. Can be set to:
+   * "beginning" (the default option, runs the entire pipeline), 
+   * "align" (skips the creation of the augmented genome and the output folders to start at the alignment process), 
+   * "markers" (skips to the creation of the insertion site readout), 
+   * "cnv" (skips to the CNV analysis),
+   * "plots" (skips to the generation of the CNV plots),
+   * "kraken" (skips to the microbial contamination analysis),
+   * "variant" (skips to SNV analysis). 
+
+This option may be useful for core optimization on clusters: e.g. "beginning" is a single-core operation, "align" is a multi-core operation, so on a job scheduler a user could set a job dependent on the other and only use multiple cores when rquired. It may also be used to avoid having to restart the pipeline from scratch should the hardware or the software fail for any reason, or to perform further analysis on data that SeqVerify has already process (e.g. add KRAKEN2 analysis when it wasn't initially requested).
+
 ##### KRAKEN2
-* ```--kraken``` Determines if KRAKEN2 analysis is to be performed on the sample or not. If set, requires ```--database``` option in order to work correctly.
-* ```--database``` (Type: String/Path) Path to valid KRAKEN2 database, or, if KRAKEN2 environmental variables are set, the name of the database. Only needed if ```--kraken``` set. No default setting.
+* ```--kraken``` Enables KRAKEN2 analysis. If set, requires the ```--database``` option for custom databases.
+* ```--database``` (Type: String/Path) Path to valid KRAKEN2 database, or, if the KRAKEN2 environmental variables are set, the name of the database. Only needed if ```--kraken``` set; if not set when ```--kraken``` is used, will default to the 8GB PlusPFP database downloaded by ```--download-defaults```.
 ##### Insertion Site Detection
 * ```--granularity``` (Type: Integer) Determines how large (in bp) insertion site bins are, i.e. how far apart two insertions can be in order to count as the same insertion site. Set by default to 500, a value of 1 means all insertions on different coordinates will be counted as different insertion sites and show up separately on the readout.
 * ```--min_matches``` (Type: Integer) Determines the minimum number of matches/insertions required for an insertion site to appear on the readout. Set by default to 1, i.e. shows any insertion, some of which may be false positives due to repetitive DNA or similar variables.
+* ```--mitochondrial``` (Type: Flag) If set, enables insertion site detection on chrM in the genome given for detection of mitochondrial DNA in the rest of the genome. 
 ##### CNVPytor
 * ```--bin_size``` (Type: Integer) Determines how many bp are binned together for the purposes of copy number variation detection. Default is 100000 (resulting in 100kbp bins), the minimum value is 1, but anything below the original read length (150 in the test data) will yield meaningless data.
-* ```--manual_plots``` Turns off IGV screenshots for coverage plots of transgenes, uses an internal matplotlib script instead. 
+* ```--manual_plots``` Turns off IGVReports reports for the coverage plots of the transgenes provided, uses an internal matplotlib-based script instead. Not recommended unless there are issues with installing IGVReports or adjacent dependencies. 
 ##### Variant Calling
-* ```--variant_calling``` Turns on the variant calling portion of the pipeline, and takes three space-separated arguments: the name/path of a genome compatible with the VCF annotation DB used (e.g. hg38 for ClinVar), the path to the snpEff config file, and the name/path to a valid annotation DB (e.g. ClinVar)
+* ```--variant_calling``` Turns on the variant calling portion of the pipeline, and takes two space-separated arguments: the name/path of a genome compatible with the VCF annotation DB used (e.g. hg38 for ClinVar), and the name/path to a valid annotation DB (e.g. ClinVar)
 * ```--variant_intensity``` (Type: String) Includes all variants at or above a certain severity level in the final variant readout. Can be set to (lowest) "MODIFIER", "LOW", "MODERATE", or "HIGH" (highest). Set to "MODERATE" by default.
 ##### Other
-* ```--keep_temp``` If enabled, keeps the temporary files created during the pipeline's execution. It is off by default. We do not recommend turning it on since temp files can reach upwards of 50-100GB depending on the read coverage.
-* ```--download_defaults``` If enabled, downloads the default genomes and databases to the working directory: [T2T-CHM13v2.0](https://github.com/marbl/CHM13#analysis-set), intended to be used in ```--genome```, [GRCh38/hg38](https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/latest/) for variant calling, and the [8GB PlusPFP](https://benlangmead.github.io/aws-indexes/k2) KRAKEN2 database (placed in a new folder named seqverify_database). Kills the program after downloading these, so anything after ```seqverify --download_defaults``` is ignored.
+* ```--keep_temp``` If enabled, keeps the temporary files created during the pipeline's execution. It is off by default. Not recommended -- temp files can reach upwards of 50-100GB (or much higher) depending on the read coverage.
+* ```--download_defaults``` If enabled, downloads the default genomes and databases to the working directory: [T2T-CHM13v2.0](https://github.com/marbl/CHM13#analysis-set), intended to be used in ```--genome```, [GRCh38/hg38](https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/latest/) for variant calling, and the [8GB PlusPFP](https://benlangmead.github.io/aws-indexes/k2) KRAKEN2 database (placed in a new folder named seqverify_database). Kills the program after downloading these, so anything in the command after ```seqverify --download_defaults``` is ignored.
 
 ## Output
 
@@ -117,18 +129,19 @@ After installing SeqVerify from Bioconda, you will need to assemble the followin
 * Genome sequencing reads, in separated forward and backward FASTQ/FASTA files. SAM format files can be separated using a command like ```samtools fastq``` and then used for the pipeline. These will be referred to as ```r1.fq``` and ```r2.fq```.
 * Reference genome, in FASTA format: the pipeline was mainly developed for [CHM13](https://github.com/marbl/CHM13#downloads), but older genomes such as [HG38](https://www.ncbi.nlm.nih.gov/datasets/genome/GCF_000001405.40/) were also tested with good results. This will be referred to as ```genome.fa```.
 * Transgene/Marker genome(s), in FASTA format. This tutorial will use two transgenes (even though any number can be used), which will be referred to as ```transgene1.fa``` and ```transgene2.fa```.
+* (If exact edits are desired) A specially-formatted commands file to indicate exact edits on the genome, information on which can be found below, which will be referred to as ```commands.txt```.
 * (If KRAKEN is enabled) A valid KRAKEN2 database. More information about how to make a valid KRAKEN2 database can be found [here](https://github.com/DerrickWood/kraken2/blob/master/docs/MANUAL.markdown#kraken-2-databases). 
 
 You should then pick a directory to run the pipeline in, from which you'll call the ```seqverify``` command. This will create two folders inside of it, the output folder and the temp folder (the latter of which will be deleted by default). 
 
-```seqverify --output output_name --reads_1 r1.fastq --reads_2 r2.fastq --genome genome.fa --marker_sources transgene1.fa transgene2.fa (--kraken True --database database)```
+```seqverify --output output_name --reads_1 r1.fastq --reads_2 r2.fastq --genome genome.fa --untargeted transgene1.fa transgene2.fa (--targeted commands.txt) (--kraken --database database)```
 
-The pipeline will then run: this will usually take a few hours, with the most time-intensive steps being BWA alignment and genome indexing. The output files as described above will be output in the output folder, and everything else in the temp folder will be deleted unless ```--del_temp``` is set to ```F```.
+The pipeline will then run: this will usually take a few hours, with the most time-intensive steps being BWA alignment and genome indexing. The output files as described above will be output in the output folder, and everything else in the temp folder will be deleted unless ```--keep_temp``` is set.
 
 
 #### Command text file generation
 
-To use the ```--exact``` flag for known insertion sites of transposons, SeqVerify requires the construction of a commands file. The commands file should be a text file and must be formatted as follows:
+To use the ```--targeted``` flag for known insertion sites of transposons, SeqVerify requires the construction of a commands file. The commands file should be a text file and must be formatted as follows:
 
 ```CHR:START-END  SEQUENCE```
 
@@ -146,9 +159,5 @@ Pure insertions (i.e. inserting while deleting nothing) can be achieved by putti
 Pure deletions (i.e. deletions with no insertions) can be achieved by leaving the sequence field blank: ```chr2:0-10  ``` deletes the first 10 bases in chromosome 2 and does not replace them with anything.
 
 Multiple commands are allowed in one command file, and seqverify automatically handles interactions between commands on the same chromosome (i.e. a command's coordinates changing because of a previous command), so all the end user needs to do is use the coordinates straight from their source without any adjustment or calculation. 
-
-```seqverify --output output_name --reads_1 r1.fastq --reads_2 r2.fastq --genome genome.fa --inexact transgene1.fa transgene2.fa (--kraken --database database) --threads T --start 2```
-
-Where ```T``` is the number of threads available for the multi-threaded portion.
 
 
