@@ -31,7 +31,7 @@ conda install -c bioconda seqverify
 An example SeqVerify call can be found below:
 
 ```
-seqverify --output output_name --reads_1 sample_1.fastq --reads_2 sample_2.fastq --genome genome.fa --inexact transgenes.fa --exact commands.txt --database db8gb
+seqverify --output output_name --reads_1 sample_1.fastq --reads_2 sample_2.fastq --genome genome.fa --untargeted transgenes.fa --targeted commands.txt --database db8gb
 ```
 
 ### Anatomy of a SeqVerify call
