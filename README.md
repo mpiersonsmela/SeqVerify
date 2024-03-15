@@ -11,6 +11,7 @@ SeqVerify is a Python-based command line tool for analysis of whole genome seque
 * HTSLIB
 * IDNA
 * IGV >= 2.13.2
+* IGVReports
 * Kraken2 >= 2.0
 * Matplotlib(-base) >= 2.2
 * Numpy
