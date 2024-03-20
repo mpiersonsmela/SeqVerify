@@ -3,6 +3,7 @@ import os
 import matplotlib.pyplot as plt
 from math import exp, factorial, comb
 from copy import deepcopy
+from scipy.stats import poisson
 
 supp_tags = ['SA','XA'] #sets the two possible optional alignments, chimeric and split respectively
 
@@ -13,17 +14,17 @@ def pathFinder(potential_path): #defines pathFinder, a function that checks if a
         path = os.getcwd()+"/"+potential_path
     return path
 
-def poisson(lam,x):
-    pdf = ((lam**x)*(exp(-1*lam)))/(factorial(x))
+#def poisson(lam,x):
+#    pdf = 0 #((lam**x)*(exp(-1*lam)))/(factorial(x))
 
-    to_sum = [(lam**j)/(factorial(j)) for j in range(0,x+1)]
-    cdf = (exp(-1*lam))*sum(to_sum)
-    return [pdf,cdf] 
+#    to_sum = [(lam**j)/(factorial(j)) for j in range(0,x+1)]
+#    cdf = (exp(-1*lam))*sum(to_sum)
+#    return [pdf,cdf] 
 
-def binomial(n,p,k):
-    pdf = comb(n,k)*(p**k)*((1-p)**(n-k))
-    cdf = sum([comb(n,i)*(p**i)*((1-p)**(n-i)) for i in range(k)])
-    return [pdf,cdf]
+#def binomial(n,p,k):
+#    pdf = comb(n,k)*(p**k)*((1-p)**(n-k))
+#    cdf = sum([comb(n,i)*(p**i)*((1-p)**(n-i)) for i in range(k)])
+#    return [pdf,cdf]
 
 class SamAlignment:
     def __init__(self, alignment): 
@@ -194,7 +195,7 @@ def filterAndScore(temp_folder,folder_insertion,bam_file,readout_dict,genome,rea
     print(f"calculated read depth as {read_depth} from {total_cov} total reads over length {length}")
     editable_readout = deepcopy(readout_dict)
     spurious_threshold = 0
-    while poisson(read_depth,spurious_threshold)[1] < 0.99999:
+    while poisson.cdf(spurious_threshold,read_depth) < 0.99999: #poisson(read_depth,spurious_threshold)[1]
         spurious_threshold += 1
     print(f"spurious threshold is {spurious_threshold}, proceeding to scoring...")
     with open(f"{temp_folder}/confidence.bed","w+") as bed:
@@ -203,7 +204,7 @@ def filterAndScore(temp_folder,folder_insertion,bam_file,readout_dict,genome,rea
                 for site, repetitions in sites.items():
                     repetitions = int(readout_dict[read_chromosome][alignment_chromosome][site])
                     bed.write(f"{alignment_chromosome}\t{abs(site)}\t{abs(int(site))+1}\n")
-                    likelihood_insertion = poisson(read_depth//2,repetitions)[1] #divides read length by 2 to get haploid depth
+                    likelihood_insertion = poisson.cdf(repetitions,read_depth//2) #divides read length by 2 to get haploid depth #poisson(read_depth//2,repetitions)[1]
                     try:
                         ratio = likelihood_insertion/(likelihood_insertion+0.005) #TODO: Improve denominator
                         editable_readout[read_chromosome][alignment_chromosome][site] = round(ratio,4)
