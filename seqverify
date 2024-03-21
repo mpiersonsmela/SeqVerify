@@ -33,7 +33,7 @@ parser.add_argument('--granularity',type=int, required=False, default=500) #How 
 parser.add_argument('--threads',type=int,required=False, default=1) #How many threads seqverify can use
 parser.add_argument('--max_mem', type=str, required=False, default='16G') #Max memory allowed, ending in capital "G" or "M"
 parser.add_argument('--min_matches', type=int, required=False,default=1) #How many times an insertion needs to align to the reference genome to show up in the readout
-parser.add_argument('--start', type=str, required=False, default="beginning") #Check GitHub, TL;DR: Setting this to "1" will only run the single-threaded portion of the pipeline, "2" will only run the multi-threaded portion
+parser.add_argument('--start', type=str, required=False, default="all") #which section of the code to run
 parser.add_argument('--keepgoing',action='store_const',const=True,required=False,default=False) #continue to next part after completing
 parser.add_argument('--mitochondrial',action='store_const',const=True,required=False,default=False) #continue to next part after completing
 
