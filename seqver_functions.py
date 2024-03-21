@@ -247,7 +247,7 @@ def readout(folder,insertion_dict, original_dict, chr_filter, min_matches=1):
                                 if repetitions != None:
                                     #if repetitions >= min_matches:
                                     match_num = original_dict[read_chromosome][align_chr][site]
-                                    file.write(f"{align_chr},{str(site[1:]) if str(site)[0] == '-' else str(site)},{read_chromosome},{'True' if str(site)[0] == '-' else 'False'},{str(match_num)},{str(repetitions)}\n")
+                                    file.write(f"{align_chr},{str(site)[1:] if str(site)[0] == '-' else str(site)},{read_chromosome},{'True' if str(site)[0] == '-' else 'False'},{str(match_num)},{str(repetitions)}\n")
                                     #if str(site)[0] == '-':
                                         #file.write('\t'+'\t'+str(site)[1:]+" (Chimeric/Split Read): "+str(repetitions)+" confidence score (matches)\n") #adds chimeric reads and their location
                                         #file.write(f"\t\t{str(site)[1:]} (Chimeric/Split Read): {str(repetitions)} confidence score ({str(match_num)} {'match' if int(match_num) == 1 else 'matches'}) \n") #adds chimeric reads and their location
