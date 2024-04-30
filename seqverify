@@ -88,10 +88,10 @@ if args.download_defaults: #If --download_defaults is set, downloads the three d
 output_name = args.output
 
 #Stores Variable/Folder Names:
-folder = f"seqverify_{output_name}"
-temp_folder =f"seqverify_temp_{output_name}"
+folder = f"{output_name}_seqverify"
+temp_folder =f"{output_name}_seqverify_temp"
 marker_list_file = f"seqverify_{output_name}_transgene_list.fa"
-genome_with_markers = f"seqverify_{output_name}_collated.fa"
+genome_with_markers = f"seqverify_{output_name}_genome_with_markers.fa"
 aligned_with_markers = f"seqverify_{output_name}_markers.sam"
 aligned_diff_chr = f"seqverify_{output_name}_markers_diff_chr.sam"
 aligned_diff_chr_bam = f"seqverify_{output_name}_markers_diff_chr.bam"
@@ -137,16 +137,16 @@ gtf = None
 
 granularity_threshold = args.granularity
 
-if args.untargeted != None:
+if args.untargeted is not None:
     marker_sources_path = [pathFinder(i) for i in args.untargeted]
 
-if args.targeted != None:
+if args.targeted is not None:
     exact_path = pathFinder(args.targeted)
 
-if args.database != None:
+if args.database is not None:
     database = pathFinder(args.database)
 
-if args.gtf != None:
+if args.gtf is not None:
     gtf_file = pathFinder(args.gtf)
     
 os.system(f'mkdir -p {folder}')
@@ -186,7 +186,7 @@ if args.start == "beginning" or args.start == "all":
     #Collates all markers/transgenes into a single FASTA file for ease of handling
     
     print("started gtf")
-    if args.gtf is not None:
+    if args.gtf is not None and exact_path is not None:
         gtfEdit(gtf_file, commands, temp_folder, folder_insertion, new_gtf_unsorted, new_gtf_sorted)
     
     if marker_sources_path is not None:
@@ -266,7 +266,7 @@ if args.start == "cnv" or args.start == "all":
     #CNVPytor Logic/Commands, these create a .pytor file for the BAM file and go through all the steps necessary to generate a final plot of the entire genome for ease of CNV analysis
     #Refer to github.com/abyzovlab/CNVpytor/tree/master/cnvpytor for more information
 
-    if commands == []:
+    if exact_path is None: #if there weren't any changes to the default genome
         os.system(f'cnvpytor -root {folder_cnv}/{pytor} -rd {folder_insertion}/{aligned_diff_chr_bam}')
         os.system(f'cnvpytor -root {folder_cnv}/{pytor} -his {bin_size}')
         os.system(f'cnvpytor -root {folder_cnv}/{pytor} -partition {bin_size}')
@@ -348,10 +348,19 @@ if args.start == "variant" or args.start == "all":
         #variant_config_path = args.variant_calling[1] #not used. Maybe add as optional argument?
         clinvardb_source_path = pathFinder(args.variant_calling[1]) #example: "seqverify_database/clinvar.vcf.gz" Note, vcf.gz.tbi file must also be present
         
-        #realigning the reads to the new genome
-        os.system(f"bwa index {variant_genome_source_path}") #already indexed
-        os.system(f"samtools faidx {variant_genome_source_path}")
+        #check if BWA index file already exists, if not then create it
+        if os.path.isfile(variant_genome_source_path+".bwt") and os.path.isfile(variant_genome_source_path+".pac") and os.path.isfile(variant_genome_source_path+".sa") and os.path.isfile(variant_genome_source_path+".ann") and os.path.isfile(variant_genome_source_path+".amb"):
+            print("Detected that BWA indexing was already performed. Skipping BWA indexing.")
+        else:
+            print("Existing BWA index not detected. Performing indexing.")
+            os.system(f"bwa index {variant_genome_source_path}")
+        if os.path.isfile(variant_genome_source_path+".fai"):
+            print("Detected that samtools faidx was already performed. Skipping samtools faidx.")
+        else:
+            print("Existing FASTA index not detected. Performing indexing.")
+            os.system(f"samtools faidx {variant_genome_source_path}")
         
+        #realigning the reads to the new genome
         bwa_cmd = f"bwa mem -M -t {threads} {variant_genome_source_path} {reads_1_path} {reads_2_path} > {temp_folder}/{variant_genome_aligned}"
         
         exitcode = os.system(bwa_cmd)
@@ -364,6 +373,13 @@ if args.start == "variant" or args.start == "all":
         #Calls variants using bcftools call. -mv option outputs only variant sites
         #TODO: add multithreading (maybe split by chromosomes and then recombine)
         os.system(f"bcftools mpileup -Ou -f {variant_genome_source_path} {temp_folder}/{variant_genome_aligned_bam} | bcftools call -mv -Ov -o {temp_folder}/{variant_vcf}")
+        
+        if args.keepgoing:
+            args.start = "snp_filtering"
+        
+if args.start == "snp_filtering" or args.start == "all":
+        variant_genome_source_path = pathFinder(args.variant_calling[0]) #example: "seqverify_database/hg38.fa"
+        clinvardb_source_path = pathFinder(args.variant_calling[1]) #example: "seqverify_database/clinvar.vcf.gz" Note, vcf.gz.tbi file must also be present
         
         #Runs snpEff, SnpSift to do a first pass of filtering the variants, saves everything in the main folder for post-pipeline analysis
         os.system(f"snpEff -v hg38 {temp_folder}/{variant_vcf} > {temp_folder}/{variant_vcf_ann}")
