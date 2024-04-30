@@ -158,7 +158,7 @@ def group(samfile): #returns a dictionary containing all reference transgene chr
     return alignments
 
 def compress(alignment_dict, granularity=500): #compresses the alignments to the desired granularity
-    print("reached compression")
+    print("reached read aggregation")
     readout_dict = {} #initializes final dictionary as empty
     for reference_chromosome, alignments in alignment_dict.items():
         readout_dict[reference_chromosome] = {}
@@ -201,26 +201,7 @@ def compress(alignment_dict, granularity=500): #compresses the alignments to the
 
                 final_readout_dict[reference_chromosome][aligned_chromosome][chimeric_site_positive_coordinates] = total_reads
                 
-           # while len(chimeric_sites) != 0:
-           #     chimeric_site_in_dict = chimeric_sites.pop(0)
-           #     chimeric_site_positive_coordinates = chimeric_site_in_dict
-           #     if str(chimeric_site_positive_coordinates)[0] == "-":
-           #         chimeric_site_positive_coordinates = int(chimeric_site_positive_coordinates)*-1 #flips chimeric site coords back to positive
-           #     for location, repetitions in alignment_data.items():
-           #         if abs(chimeric_site_positive_coordinates - location) <= granularity:
-           #             try:
-           #                 chimeric_read_count = readout_dict[reference_chromosome][aligned_chromosome][chimeric_site_in_dict]
-           #                 nonchimeric_read_count = readout_dict[reference_chromosome][aligned_chromosome][location]
-           #                 total_reads = [sum(x) for x in zip(chimeric_read_count,nonchimeric_read_count)]
-           #                 del final_readout_dict[reference_chromosome][aligned_chromosome][chimeric_site_in_dict]
-           #                 del final_readout_dict[reference_chromosome][aligned_chromosome][location]
-           #                 final_readout_dict[reference_chromosome][aligned_chromosome][chimeric_site_positive_coordinates] = total_reads
-           #                 chimeric_sites.append(chimeric_site_positive_coordinates)
-           #             except KeyError:
-           #                 continue
-           #         else:
-           #             continue
-    print("done with compression")
+    print("done with read aggregation")
     return final_readout_dict
 
 def filterAndScore(temp_folder,folder_insertion,bam_file,readout_dict,genome,read_depth):
