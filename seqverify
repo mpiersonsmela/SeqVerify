@@ -73,7 +73,7 @@ if args.download_defaults: #If --download_defaults is set, downloads the three d
     #Downloads a KRAKEN-valid 8GB database, PlusPF_8GB
     os.system('mkdir seqverify_defaults/seqverify_database')
     os.system('curl -OJX GET "https://genome-idx.s3.amazonaws.com/kraken/k2_pluspf_08gb_20230605.tar.gz" --output-dir seqverify_defaults')
-    os.system('tar -xzf seqverify_defaults/k2_pluspf_08gb_20230605.tar.gz -C seqverify_database')
+    os.system('tar -xzf seqverify_defaults/k2_pluspf_08gb_20230605.tar.gz -C seqverify_defaults/seqverify_database')
 
     #Downloads the snpEff config file for ease of access during variant calling
     os.system('curl -OJX GET "https://raw.githubusercontent.com/pcingola/SnpEff/master/config/snpEff.config" --output-dir seqverify_defaults')
