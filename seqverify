@@ -382,7 +382,7 @@ if args.start == "snp_filtering" or args.start == "all":
         clinvardb_source_path = pathFinder(args.variant_calling[1]) #example: "seqverify_database/clinvar.vcf.gz" Note, vcf.gz.tbi file must also be present
         
         #Runs snpEff, SnpSift to do a first pass of filtering the variants, saves everything in the main folder for post-pipeline analysis
-        os.system(f"snpEff -v hg38 {temp_folder}/{variant_vcf} > {temp_folder}/{variant_vcf_ann}")
+        os.system(f"snpEff -dataDir seqverify_defaults -v hg38 {temp_folder}/{variant_vcf} > {temp_folder}/{variant_vcf_ann}")
         os.system(f"SnpSift annotate -v {clinvardb_source_path} {temp_folder}/{variant_vcf_ann} > {folder_snp}/{variant_vcf_ann}")
         
         #Further filter the reads, saves everything to a readout in the main folder
