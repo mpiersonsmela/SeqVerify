@@ -8,9 +8,13 @@ class editArgument:
         self.chr = site[0]
         self.coords = [int(i) for i in site[1].split("-")] #translates between SAM coords (1-based) and Python coords (0-based), assumes input in SAM coords
         self.sequence = fields[1].strip()
+        try:
+            self.name = fields[2].strip()
+        except IndexError: #if name is missing add default name based on location of new feature
+            self.name = f'gene_id "feature_{self.chr}-{self.coords[0]}:{self.coords[1]}";'
     
     def __str__(self):
-        return f"{self.chr}:{self.coords[0]}-{self.coords[1]}\t{self.sequence}"
+        return f"{self.chr}:{self.coords[0]}-{self.coords[1]}\t{self.sequence}\t{self.name}"
     
     def iterable(self):
         return [self.chr,self.coords[0],self.coords[1],self.sequence]
@@ -48,7 +52,7 @@ def chrCommand(command,folder):
         reference.write(f">{command.chr}\n")
         reference.writelines([i+"\n" for i in replacement])
 
-def commandHandler(genome, commandfile, folder, newName): #assumes that within each chromosome, commands are non-overlapping and unique 
+def commandHandler(genome, commandfile, folder, newName, return_commands_only = False): #assumes that within each chromosome, commands are non-overlapping and unique 
     with open(f"{commandfile}","r") as original:
         commands = original.readlines()
         commandfile = commandfile.split("/")[-1]
@@ -62,6 +66,9 @@ def commandHandler(genome, commandfile, folder, newName): #assumes that within e
                 for cmdToEdit in commandGroup[chr][i+1:]:
                     cmdToEdit.coords = [coord+shift for coord in cmdToEdit.coords]
         totalCommands = [command for group in commandGroup.values() for command in group]
+
+        if return_commands_only:
+            return totalCommands
 
         for chr in chrsAffected:
             genomeSplitter(genome, chr, folder)

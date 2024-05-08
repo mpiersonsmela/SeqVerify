@@ -1,6 +1,9 @@
 import re
 import os
 import matplotlib.pyplot as plt
+from math import exp, factorial, comb
+from copy import deepcopy
+from scipy.stats import poisson
 
 supp_tags = ['SA','XA'] #sets the two possible optional alignments, chimeric and split respectively
 
@@ -141,9 +144,21 @@ def group(samfile): #returns a dictionary containing all reference transgene chr
                         alignments[ref_chromosome][position[0]][position[1]] += 1 
                     except:
                         alignments[ref_chromosome][position[0]][position[1]] = 1
+    for ref_chromosome, aligned in alignments.items():
+        for aligned_chromosome, alignment_data in aligned.items():
+            for site in alignment_data.keys():
+                matches = alignments[ref_chromosome][aligned_chromosome][site]
+                chimeric = str(site)[0] == "-"
+                if chimeric:
+                    alignments[ref_chromosome][aligned_chromosome][site] = [0, matches]
+                if not chimeric:
+                    alignments[ref_chromosome][aligned_chromosome][site] = [matches, 0]
+    print(alignments)
+    print("done with grouping")
     return alignments
 
 def compress(alignment_dict, granularity=500): #compresses the alignments to the desired granularity
+    print("reached read aggregation")
     readout_dict = {} #initializes final dictionary as empty
     for reference_chromosome, alignments in alignment_dict.items():
         readout_dict[reference_chromosome] = {}
@@ -155,33 +170,107 @@ def compress(alignment_dict, granularity=500): #compresses the alignments to the
                 above_granularity = [distance >= granularity for distance in distances] #returns a list of true/false values whether a point is far enough that it needs to be in a different bin from the others
                 if all(above_granularity): #if the point is far enough from all of them to be put into their bin, then...
                     try:
-                        readout_dict[reference_chromosome][aligned_chromosome][location] += repetitions #...adds to a new bin or creates one
+                        matches = readout_dict[reference_chromosome][aligned_chromosome][location]
+                        readout_dict[reference_chromosome][aligned_chromosome][location] = [sum(x) for x in zip(matches, repetitions)] #repetitions #...adds to a new bin or creates one
                     except KeyError:
                         readout_dict[reference_chromosome][aligned_chromosome][location] = repetitions
                 else:
-                    for possible_location, repetition in readout_dict[reference_chromosome][aligned_chromosome].items():
+                    for possible_location, _ in readout_dict[reference_chromosome][aligned_chromosome].items():
                         if abs(possible_location - location) < granularity: #if the point is at least close enough to one point to be put in its bin, finds which point it is and adds it to it.
-                            readout_dict[reference_chromosome][aligned_chromosome][possible_location] += repetitions
-    return readout_dict
+                            matches = readout_dict[reference_chromosome][aligned_chromosome][possible_location]
+                            readout_dict[reference_chromosome][aligned_chromosome][possible_location] = [sum(x) for x in zip(matches, repetitions)] #repetitions
+    
+    final_readout_dict = deepcopy(readout_dict)
+    for reference_chromosome, alignments in readout_dict.items():
+        for aligned_chromosome, alignment_data in alignments.items():
+            chimeric_sites = [site for site in alignment_data.keys() if str(site)[0] == "-"]
+            for chimeric_site in chimeric_sites:
+                locations = list(final_readout_dict[reference_chromosome][aligned_chromosome].keys())
+                repetitions = list(final_readout_dict[reference_chromosome][aligned_chromosome].values())
+                chimeric_site_positive_coordinates = int(chimeric_site)*-1
+                close_locations_indices = [index for index, location in enumerate(locations) if abs(chimeric_site_positive_coordinates - location) <= granularity and int(location) >= 0]
+                
+                total_reads = final_readout_dict[reference_chromosome][aligned_chromosome][chimeric_site]
+                print(f"DEBUG DELETING chimeric site {chimeric_site}")
+                del final_readout_dict[reference_chromosome][aligned_chromosome][chimeric_site]
+                for index in close_locations_indices:
+                    location_at_index, repetitions_at_index = locations[index], repetitions[index]
+                    total_reads = [sum(x) for x in zip(total_reads,repetitions_at_index)]
+                    print(f"DEBUG DELETING nonchimeric location {location_at_index}")
+                    del final_readout_dict[reference_chromosome][aligned_chromosome][location_at_index]
 
-def readout(folder,insertion_dict, chr_filter, min_matches=1):
+                final_readout_dict[reference_chromosome][aligned_chromosome][chimeric_site_positive_coordinates] = total_reads
+                
+    print("done with read aggregation")
+    return final_readout_dict
+
+def filterAndScore(temp_folder,folder_insertion,bam_file,readout_dict,genome,read_depth):
+    print("reached filtering")
+    os.system(f'samtools depth {folder_insertion}/{bam_file} > {temp_folder}/total_coverage.cov')
+    total_cov, length = 0,0
+    with open(f"{temp_folder}/total_coverage.cov","r") as cov:
+        for line in cov:
+            depth = line.split("\t")[2]
+            total_cov += int(depth)
+            length += 1
+    read_depth = int(round(total_cov/length, 0))
+    print(f"calculated read depth as {read_depth} from {total_cov} total read lengths over length {length}")
+    editable_readout = deepcopy(readout_dict)
+    spurious_threshold = 0
+    while poisson.cdf(spurious_threshold,read_depth) < 0.99999:
+        spurious_threshold += 1
+    print(f"spurious threshold is {spurious_threshold}, proceeding to scoring...")
+    with open(f"{temp_folder}/confidence.bed","w+") as bed:
+        for read_chromosome, alignments in readout_dict.items():
+            for alignment_chromosome, sites in alignments.items():
+                for site, repetitions in sites.items():
+                    repetitions = int(sum(readout_dict[read_chromosome][alignment_chromosome][site])) #repetitions = number of reads (non-chimeric + chimeric) matching that site
+                    bed.write(f"{alignment_chromosome}\t{abs(site)}\t{abs(int(site))+1}\n")
+                    likelihood_insertion = poisson.cdf(repetitions,read_depth//2) #divides read length by 2 to get haploid depth #poisson(read_depth//2,repetitions)[1]
+                    try:
+                        ratio = likelihood_insertion/(likelihood_insertion+0.005) #TODO: Improve denominator
+                        editable_readout[read_chromosome][alignment_chromosome][site].append(ratio)
+                    except ZeroDivisionError: 
+                        editable_readout[read_chromosome][alignment_chromosome][site].append("inf")
+    print("confidence score calculated, moving to coverage mapping...")
+    os.system(f'samtools depth -b {temp_folder}/confidence.bed {folder_insertion}/{bam_file} > {temp_folder}/confidence.cov')
+    to_delete = []
+    with open(f"{temp_folder}/confidence.cov","r") as cov:
+        for cov_site in cov:
+            fields = cov_site.split("\t")
+            if int(fields[2]) >= spurious_threshold:
+                to_delete.append((fields[0],fields[1]))
+    print("coverage mapping complete, moving to pruning high-coverage areas...")
+    for read_chromosome, alignments in readout_dict.items():
+        for alignment_chromosome, sites in alignments.items():
+            for site, repetitions in sites.items():
+                current_site = (alignment_chromosome,site)
+                if current_site in to_delete:
+                    del editable_readout[read_chromosome][alignment_chromosome][site]
+    print("filtering complete")
+    return [readout_dict,editable_readout]
+
+def readout(folder,insertion_dict, original_dict, chr_filter, min_matches=1):
+    print("reached printing")
     with open(f"{folder}/seqverify_readout.txt", "w") as file: #makes new readout file
-        file.write("Insertion Sites Found:\n") #boilerplate formatting
+        file.write("chromosome,position,gene,nonchimeric_count,chimeric_count,confidence\n")
         for read_chromosome, alignments in insertion_dict.items():
-            file.write(read_chromosome+":\n") #inserts reference transgene first
-            for align_chr, sites in alignments.items():
-                if align_chr in chr_filter:
-                    continue #if the chromosome it aligns to is one we indicated we don't want (usually other transgenes, since due to repetitive DNA they clutter the readout), bins it and continues
-                else:
-                    file.write('\t'+align_chr+":\n") #adds the chromosome where insertion sites from the reference transgene were found
-                    for site, repetitions in sites.items():
-                        if repetitions >= min_matches:
-                            if str(site)[0] == '-':
-                                file.write('\t'+'\t'+str(site)[1:]+" (Chimeric/Split Read): "+str(repetitions)+" matched\n") #adds chimeric reads and their location
-                            else:
-                                file.write('\t'+'\t'+str(site)+": "+str(repetitions)+" matched\n") #adds nonchimeric (potentially non-exaxt insertion sites) and their location
+            if  alignments is not None and alignments != {}:
+                for align_chr, sites in alignments.items():
+                    if sites != {}:
+                        if align_chr in chr_filter:
+                            continue #if the chromosome it aligns to is one we indicated we don't want (usually other transgenes, since due to repetitive DNA they clutter the readout), bins it and continues
                         else:
-                            continue
+                            for site, repetitions in sites.items(): #repetitions = [nonchimericread]
+                                if repetitions is not None and (repetitions[0]+repetitions[1]) >= min_matches:
+                                    nonchimeric_reads, chimeric_reads, score = repetitions[0], repetitions[1], repetitions[2]
+                                    if str(site)[0] == '-': #checks if site is chimeric (chimeric sites are internally denoted by negative coordinates) and takes out the negative sign for printing
+                                        location = str(site)[1:]
+                                    else:
+                                        location = str(site)
+                                    file.write(f"{align_chr},{location},{read_chromosome},{nonchimeric_reads},{chimeric_reads},{score}\n")
+
+    os.system(f'''awk 'NR<2 {{print $0;next}} {{print $0| "sort -t ',' -k3,3 -k1,1 -k2,2n "}}' {folder}/seqverify_readout.txt > {folder}/seqverify_readout.sorted.txt''')
 
 def compare(vcf_1, vcf_2, min_quality, temp_folder, folder, stats, isec):
     for vcf in [vcf_1,vcf_2]:

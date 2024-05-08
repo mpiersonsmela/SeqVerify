@@ -16,7 +16,7 @@ def region_bed(temp_folder,sam_header,commands,chr_list,output, zoomout = 200): 
                             bed.write(f"{chr_name}\t1\t{end}\n") #Writes the coordinates to the file #NOTE: starting at 1 to avoid IGV problems
                     else:
                         continue
-        if commands != []:
+        if commands is not None:
             for command in commands:
                 fields = str(command).split("\t")
                 chr, start, seq = fields[0].split(":")[0], int(fields[0].split(":")[1].split("-")[0]), len(fields[1])
@@ -90,22 +90,42 @@ def chrHistograms(coveragemap, chrList): #Generates histograms for every chromos
         except ZeroDivisionError:
             continue
 
-def igvScreenshot(temp_folder,folder,alignments,genome,bed_file,imageformat="png"): #If using IGV, deals with IGV logic
+def igvScreenshot(temp_folder,folder,alignments,genome,bed_file,imageformat="png",gtf_file=None): #If using IGV, deals with IGV logic
     with open(f"{temp_folder}/seqverify_igv.bat","w+") as file: #Autogenerates an IGV-compatible bat file we will use later to screenshot the relevant parts
         file.write("new\n") #boilerplate code
+        file.write('echo "very_beginning"\n')
         file.write(f"snapshotDirectory {folder}\n") #sets the folder for the screenshots
+        file.write('echo "beginning"\n')
         file.write(f"genome {genome}\n") #loads the genome
+        file.write(f'echo "genome {genome} loaded"\n')
         file.write(f"load {alignments}\n") #loads the bam file
+        file.write(f'echo "alignments loaded"\n')
+        if gtf_file is not None:
+            file.write(f"load {gtf_file}\n")
+            file.write(f'echo "gtf file loaded"\n')
         file.write(f"maxPanelHeight 500\n") #boilerplate code for adjustment of the screen size
         with open(f"{temp_folder}/{bed_file}","r") as bed: #writes instructions to take a screenshot of every transgene in the bed file
             for line in bed:
                 name,begin,end = [i.strip() for i in line.split("\t")]
+                file.write(f'echo "snapshot {name}"\n')
                 file.write(f"goto {name}:{begin}-{end}\n") #makes IGV go to the entire transgene
+                file.write(f'echo "goto {name}"\n')
                 file.write(f"snapshot fig_{name}.{imageformat}\n") #takes screenshot and saves it
+                file.write(f'echo "saved snapshot {name}"\n')
         file.write("exit") #boilerplate
     igv_cmd = f"xvfb-run --auto-servernum --server-args=\"-screen 0, 2048x1536x24\" igv -b {temp_folder}/seqverify_igv.bat"
     print(igv_cmd) # for debug
     os.system(igv_cmd) #runs XVFB, a headerless server emulator, to run IGV automatically without the need for a GUI.
+    
+def igvScreenshot_new(temp_folder,folder,alignments,genome,bed_file,imageformat="png",gtf_file=None): #If using IGV, deals with IGV logic
+    if gtf_file != None:
+        cmd_str = f"create_report {temp_folder}/{bed_file} --fasta {genome} --standalone --flanking 1000 --sequence 1 --begin 2 --end 3 --tracks {alignments} {folder}/{gtf_file} --output {folder}/igv_viewer.html"
+        print(cmd_str)
+        os.system(cmd_str)
+    else:
+        cmd_str = f"create_report {temp_folder}/{bed_file} --fasta {genome} --standalone --flanking 1000 --sequence 1 --begin 2 --end 3 --tracks {alignments} --output {folder}/igv_viewer.html"
+        print(cmd_str)
+        os.system(cmd_str)
 
 def genome_configurator(temp_folder,pytor_conf,gc_name,genome,sam_header):
     special_chrs = {"chrX":"S","chrY":"S","chrM":"M"}

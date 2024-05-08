@@ -11,6 +11,7 @@ dependencies:
   - htslib
   - idna
   - igv=2.13.2
+  - igv-reports
   - kraken2
   - matplotlib
   - numpy
