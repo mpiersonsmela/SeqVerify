@@ -38,7 +38,7 @@ seqverify --output output_name --reads_1 sample_1.fastq --reads_2 sample_2.fastq
 ### Anatomy of a SeqVerify call
 
 SeqVerify has the following standard arguments:
-* ```--output``` (Type: String) Used as the identifying name for all the files and folders to do with the particular call. E.g. ```--output Sample1``` will cause the output folder to be named "seqverify_Sample1"
+* ```--output``` (Type: String) Used as the identifying name for all the files and folders to do with the particular call. E.g. ```--output Sample1``` will cause the output folder to be named "Sample1_seqverify".
 * ```--reads_1``` and ```--reads_2``` (Type: String/Path) The paired-read FASTA/FASTQ, or gzipped FASTA/FASTQ source files for the reads. Also accepts paths to the files if they're not in the working folder.
 * ```--genome``` (Type: String/Path) Name or path of FASTA file to be used as reference genome for the reads (e.g. [CHM13](https://github.com/marbl/CHM13#downloads)). If not included, will default to CHM13v2.0, downloaded through ```--download-defaults```.
 * ```--untargeted``` (Type: String/Path) Names or paths of FASTA files containing the sequences of the markers to detect (transgenes, unwanted plasmids, etc.). Accepts more than one if necessary, space-separated. Can also be left blank; not mutually exclusive with ```--targeted```. 
@@ -50,7 +50,8 @@ SeqVerify has the following optional arguments:
 * ```--threads``` (Type: Integer) Determines how many CPU threads are used in the multithreaded portion of the pipeline. Set to 1 by default.
 * ```--max_mem``` (Type: String) Determines what the maximum amount of memory to be used in the indexing of the reference genome should be. Expects an integer followed by "M" or "G" (case-sensitive) for "Megabytes" or "Gigabytes" respectively. Set by default to "16G", 16 Gigabytes.
 * ```--start``` (Type: String) Determines where the pipeline starts. Can be set to:
-   * "beginning" (the default option, runs the entire pipeline), 
+   * "all" (the default option, runs the entire pipeline),
+   * "beginning" (preprocessing), 
    * "align" (skips the creation of the augmented genome and the output folders to start at the alignment process), 
    * "markers" (skips to the creation of the insertion site readout), 
    * "cnv" (skips to the CNV analysis),
@@ -58,10 +59,10 @@ SeqVerify has the following optional arguments:
    * "kraken" (skips to the microbial contamination analysis),
    * "variant" (skips to SNV analysis). 
 
-This option may be useful for core optimization on clusters: e.g. "beginning" is a single-core operation, "align" is a multi-core operation, so on a job scheduler a user could set a job dependent on the other and only use multiple cores when rquired. It may also be used to avoid having to restart the pipeline from scratch should the hardware or the software fail for any reason, or to perform further analysis on data that SeqVerify has already process (e.g. add KRAKEN2 analysis when it wasn't initially requested).
+This option may be useful for core optimization on clusters: e.g. "beginning" is a single-core operation, "align" is a multi-core operation, so on a job scheduler a user could set a job dependent on the other and only use multiple cores when rquired. It may also be used to avoid having to restart the pipeline from scratch should the hardware or the software fail for any reason, or to perform further analysis on data that SeqVerify has already processed (e.g. add KRAKEN2 analysis when it wasn't initially requested).
 
 ##### KRAKEN2
-* ```--kraken``` Enables KRAKEN2 analysis. If set, requires the ```--database``` option for custom databases.
+* ```--kraken``` Enables KRAKEN2 analysis. If using a custom database, requires the ```--database``` option.
 * ```--database``` (Type: String/Path) Path to valid KRAKEN2 database, or, if the KRAKEN2 environmental variables are set, the name of the database. Only needed if ```--kraken``` set; if not set when ```--kraken``` is used, will default to the 8GB PlusPFP database downloaded by ```--download-defaults```.
 ##### Insertion Site Detection
 * ```--granularity``` (Type: Integer) Determines how large (in bp) insertion site bins are, i.e. how far apart two insertions can be in order to count as the same insertion site. Set by default to 500, a value of 1 means all insertions on different coordinates will be counted as different insertion sites and show up separately on the readout.
@@ -79,11 +80,11 @@ This option may be useful for core optimization on clusters: e.g. "beginning" is
 
 ## Output
 
-SeqVerify will output two folders, ```seqverify_output``` and ```seqverify_temp_output``` where "output" is the variable set in the ```--output``` argument. 
+SeqVerify will output two folders, ```output_seqverify``` and ```output_seqverify_temp``` where "output" is the variable set in the ```--output``` argument. 
 
-```seqverify_temp_output``` contains files that can be deleted after the pipeline is run, that are generated and used by the pipeline (SAM headers, .BED files, etc.).
+```output_seqverify_temp``` contains files that can be deleted after the pipeline is run, that are generated and used by the pipeline (SAM headers, .BED files, etc.).
 
-```seqverify_output``` contains the following files:
+```soutput_seqverify``` contains the following files:
 
 ```seqverify_output_markers.bam``` and ```seqverify_output_markers.bam.bai``` A BAM file containing the reads given in ```--reads_1``` and ```--reads_2``` realigned to the reference genome augmented with the marker genomes and its corresponding index.
 
@@ -160,5 +161,3 @@ Pure insertions (i.e. inserting while deleting nothing) can be achieved by putti
 Pure deletions (i.e. deletions with no insertions) can be achieved by leaving the sequence field blank: ```chr2:0-10  ``` deletes the first 10 bases in chromosome 2 and does not replace them with anything.
 
 Multiple commands are allowed in one command file, and seqverify automatically handles interactions between commands on the same chromosome (i.e. a command's coordinates changing because of a previous command), so all the end user needs to do is use the coordinates straight from their source without any adjustment or calculation. 
-
-
