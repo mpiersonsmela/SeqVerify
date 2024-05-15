@@ -204,7 +204,7 @@ def compress(alignment_dict, granularity=500): #compresses the alignments to the
     print("done with read aggregation")
     return final_readout_dict
 
-def filterAndScore(temp_folder,folder_insertion,bam_file,readout_dict,genome,read_depth,stringency):
+def filterAndScore(temp_folder,folder_insertion,bam_file,readout_dict,genome,stringency):
     print("reached filtering")
     os.system(f'samtools depth {folder_insertion}/{bam_file} > {temp_folder}/total_coverage.cov')
     total_cov, length = 0,0
