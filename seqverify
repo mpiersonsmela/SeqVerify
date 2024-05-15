@@ -35,7 +35,8 @@ parser.add_argument('--max_mem', type=str, required=False, default='16G') #Max m
 parser.add_argument('--min_matches', type=int, required=False,default=1) #How many times an insertion needs to align to the reference genome to show up in the readout
 parser.add_argument('--start', type=str, required=False, default="all") #which section of the code to run
 parser.add_argument('--keepgoing',action='store_const',const=True,required=False,default=False) #continue to next part after completing
-parser.add_argument('--mitochondrial',action='store_const',const=True,required=False,default=False) #continue to next part after completing
+parser.add_argument('--mitochondrial',action='store_const',const=True,required=False,default=False) #runs insertion site detection on mitochondrial DNA
+parser.add_argument('--stringency',type=float, required=False, default=0.005) #sets stringency for the confidence score calculations
 
 #CNV/Plotting Arguments
 parser.add_argument('--manual_plots',action='store_const',const=True,required=False,default=False) #Flag enabling matplotlib plots instead of IGV plots 
@@ -254,7 +255,7 @@ if args.start == "readout" or args.start == "all": #lines 244-249 have been unin
     #Takes "diff_chr", generates a .txt human-readable readout of the insertion sites, places it into the output folder.
     data = group(f'{temp_folder}/{aligned_diff_chr}')
     insertions = compress(data,granularity_threshold)
-    filteredInsertions = filterAndScore(temp_folder,folder_insertion,aligned_diff_chr_bam,insertions,genome_source_path,10)
+    filteredInsertions = filterAndScore(temp_folder,folder_insertion,aligned_diff_chr_bam,insertions,genome_source_path,args.stringency)
     readout(folder_insertion,filteredInsertions[1],filteredInsertions[0],marker_list,min_matches)
     
     if args.keepgoing:
