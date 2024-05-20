@@ -204,7 +204,7 @@ def compress(alignment_dict, granularity=500): #compresses the alignments to the
     print("done with read aggregation")
     return final_readout_dict
 
-def filterAndScore(temp_folder,folder_insertion,bam_file,readout_dict,genome,read_depth):
+def filterAndScore(temp_folder,folder_insertion,bam_file,readout_dict,genome,stringency):
     print("reached filtering")
     os.system(f'samtools depth {folder_insertion}/{bam_file} > {temp_folder}/total_coverage.cov')
     total_cov, length = 0,0
@@ -228,7 +228,7 @@ def filterAndScore(temp_folder,folder_insertion,bam_file,readout_dict,genome,rea
                     bed.write(f"{alignment_chromosome}\t{abs(site)}\t{abs(int(site))+1}\n")
                     likelihood_insertion = poisson.cdf(repetitions,read_depth//2) #divides read length by 2 to get haploid depth #poisson(read_depth//2,repetitions)[1]
                     try:
-                        ratio = likelihood_insertion/(likelihood_insertion+0.005) #TODO: Improve denominator
+                        ratio = likelihood_insertion/(likelihood_insertion+stringency) #TODO: Improve denominator
                         editable_readout[read_chromosome][alignment_chromosome][site].append(ratio)
                     except ZeroDivisionError: 
                         editable_readout[read_chromosome][alignment_chromosome][site].append("inf")
