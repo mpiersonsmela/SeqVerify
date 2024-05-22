@@ -166,11 +166,12 @@ Multiple commands are allowed in one command file, and seqverify automatically h
 ## Common Errors
 
 Certain builds of bcftools may not be compatible with all Linux distributions. If the pipeline raises “bcftools: error while loading shared libraries: libgsl.so.25: cannot open shared object file: No such file or directory”, please try forcing Conda to use the Bioconda channel to install bcftools. You can do this by setting your .condarc file to:
-```channel_priority: strict
+```
+channel_priority: strict
 channels:
   - bioconda
   - conda-forge
   - defaults
-
+```
 
 
