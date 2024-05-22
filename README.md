@@ -6,6 +6,7 @@ SeqVerify is a Python-based command line tool for analysis of whole genome seque
 ### Dependencies (& Dependencies of Dependencies)
 * BCFtools
 * BLAST
+* BRACKEN
 * BWA >=0.7
 * CNVPytor >=1.3
 * HTSLIB
@@ -161,3 +162,8 @@ Pure insertions (i.e. inserting while deleting nothing) can be achieved by putti
 Pure deletions (i.e. deletions with no insertions) can be achieved by leaving the sequence field blank: ```chr2:0-10  ``` deletes the first 10 bases in chromosome 2 and does not replace them with anything.
 
 Multiple commands are allowed in one command file, and seqverify automatically handles interactions between commands on the same chromosome (i.e. a command's coordinates changing because of a previous command), so all the end user needs to do is use the coordinates straight from their source without any adjustment or calculation. 
+
+## Common Errors
+
+Certain versions of bcftools may not be compatible with all Linux distributions. The error “bcftools: error while loading shared libraries: libgsl.so.25: cannot open shared object file: No such file or directory”, please try using an older version of bcftools and try running the same command again.
+
