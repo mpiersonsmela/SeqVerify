@@ -3,6 +3,7 @@
 import argparse
 import os
 import sys
+import configparser
 from seqver_functions import *
 from seqver_plots import *
 from seqver_genomeupdate import *
@@ -37,6 +38,7 @@ parser.add_argument('--start', type=str, required=False, default="all") #which s
 parser.add_argument('--keepgoing',action='store_const',const=True,required=False,default=False) #continue to next part after completing
 parser.add_argument('--mitochondrial',action='store_const',const=True,required=False,default=False) #runs insertion site detection on mitochondrial DNA
 parser.add_argument('--stringency',type=float, required=False, default=0.005) #sets stringency for the confidence score calculations
+parser.add_argument('--spurious_filtering_threshold', type=float, required=False, default=0.00001)
 
 #CNV/Plotting Arguments
 parser.add_argument('--manual_plots',action='store_const',const=True,required=False,default=False) #Flag enabling matplotlib plots instead of IGV plots 
@@ -49,10 +51,39 @@ parser.add_argument('--variant_intensity',type=str,required=False,default="MODER
 #Other
 parser.add_argument('--download_defaults',action='store_const',const=True,required=False,default=False) #Downloads hg38.p14, CHM13 V2.0, and the PFPlus-8GB KRAKEN2 DB for ease of use. Terminates the program after doing that
 parser.add_argument('--similarity',nargs=2,type=str,required=False) #Runs the SNP similarity checker
-parser.add_argument('--min_quality',type=int,required=False,default=3 )
+parser.add_argument('--min_quality',type=int,required=False,default=3)
+parser.add_argument('--config',type=str,required=False,default=3)
 
 args = parser.parse_args()
 
+if args.config is not None:
+    config = configparser.ConfigParser(allow_no_value=True)
+    config.read(args.config)
+
+    args.output = config["MAIN"]["output"]
+    args.reads_1 = config["MAIN"]["reads_1"]
+    args.reads_2 = config["MAIN"]["reads_2"]
+    args.untargeted = config["MAIN"]["untargeted"]
+    args.targeted = config["MAIN"]["targeted"]
+    args.keep_temp = bool(config["MAIN"]["keep_temp"])
+    args.genome = config["GENOME"]["genome"]
+    args.gtf = config["GENOME"]["gtf"]
+    args.kraken = bool(config["KRAKEN2"]["kraken"])
+    args.database = config["KRAKEN2"]["database"]
+    args.granularity = int(config["INSERTION"]["granularity"])
+    args.threads = int(config["INSERTION"]["threads"])
+    args.max_mem = config["INSERTION"]["max_mem"]
+    args.min_matches = int(config["INSERTION"]["min_matches"])
+    args.start = config["INSERTION"]["start"]
+    args.keepgoing = config["INSERTION"]["keepgoing"]
+    args.mitochondrial = config["INSERTION"]["mitochondrial"]
+    args.stringency = float(config["INSERTION"]["stringency"])
+    args.spurious_filtering_threshold = float(config["INSERTION"]["spurious_filtering_threshold"])
+    args.manual_plots = config["CNV"]["manual_plots"]
+    args.bin_size = int(config["CNV"]["bin_size"])
+    args.variant_calling = eval(config["VARIANT"]["variant_calling"])
+    args.variant_intensity = config["VARIANT"]["variant_intensity"]
+    args.min_quality = int(config["OTHER"]["min_quality"])
 
 if args.download_defaults: #If --download_defaults is set, downloads the three databases and quits the program
     #Note:  These FTP links are likely to change over time and break the command. 
@@ -255,7 +286,7 @@ if args.start == "readout" or args.start == "all": #lines 244-249 have been unin
     #Takes "diff_chr", generates a .txt human-readable readout of the insertion sites, places it into the output folder.
     data = group(f'{temp_folder}/{aligned_diff_chr}')
     insertions = compress(data,granularity_threshold)
-    filteredInsertions = filterAndScore(temp_folder,folder_insertion,aligned_diff_chr_bam,insertions,genome_source_path,args.stringency)
+    filteredInsertions = filterAndScore(temp_folder,folder_insertion,aligned_diff_chr_bam,insertions,args.spurious_filtering_threshold,args.stringency)
     readout(folder_insertion,filteredInsertions[1],filteredInsertions[0],marker_list,min_matches)
     
     if args.keepgoing:
