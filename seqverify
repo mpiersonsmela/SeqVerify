@@ -63,7 +63,7 @@ if args.config is not None:
     args.output = config["MAIN"]["output"]
     args.reads_1 = config["MAIN"]["reads_1"]
     args.reads_2 = config["MAIN"]["reads_2"]
-    args.untargeted = config["MAIN"]["untargeted"]
+    args.untargeted = config["MAIN"]["untargeted"].split(" ")
     args.targeted = config["MAIN"]["targeted"]
     args.keep_temp = bool(config["MAIN"]["keep_temp"])
     args.genome = config["GENOME"]["genome"]
