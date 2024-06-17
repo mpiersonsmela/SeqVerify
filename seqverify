@@ -47,6 +47,7 @@ parser.add_argument('--bin_size',type=int, required=False, default=100000) #If m
 #Variant Calling Arguments
 parser.add_argument('--variant_calling',nargs=2,type=str,required=False) #Space-separated: the Path/File to the hg38 genome, the SnpEff.jar config path, the clinvar DB path
 parser.add_argument('--variant_intensity',type=str,required=False,default="MODERATE") #Minimum severity needed for a variant to show up in the readout, can be set to "MODIFIER", "LOW", "MODERATE", or "HIGH"
+parser.add_argument('--variant_window_size',type=int,required=False,default=10000) #Makes sure all variants within variant_window_size of any command's start are printed, regardless of their quality or intensity.  
 
 #Other
 parser.add_argument('--download_defaults',action='store_const',const=True,required=False,default=False) #Downloads hg38.p14, CHM13 V2.0, and the PFPlus-8GB KRAKEN2 DB for ease of use. Terminates the program after doing that
@@ -418,7 +419,10 @@ if args.start == "snp_filtering" or args.start == "all":
         os.system(f"SnpSift annotate -v {clinvardb_source_path} {temp_folder}/{variant_vcf_ann} > {folder_snp}/{variant_vcf_ann}")
         
         #Further filter the reads, saves everything to a readout in the main folder
-        mutation_logger(folder_snp,variant_lof,variant_vcf_ann,args.min_quality,args.variant_intensity)
+        if exact_path is None:
+            mutation_logger(folder_snp,variant_lof,variant_vcf_ann,args.min_quality,args.variant_intensity, args.variant_window_size)
+        else:
+            mutation_logger(folder_snp,variant_lof,variant_vcf_ann,args.min_quality,args.variant_intensity, args.variant_window_size, exact_path)
     #If deletion of files is enabled (which is it by default), deletes the temp folder.
     #This is recommended, especially since temp files contain SAM files that can get to 100+ GB depending on the size of the original inputs.
 if not args.keep_temp:
