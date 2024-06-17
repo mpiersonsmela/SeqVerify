@@ -169,6 +169,8 @@ SeqVerify allows for the use of a configuration file to load all of its settings
 
 Please modify this file without changing the text between square brackets, as modification of the headers in the square brackets will break the file's parsing in the pipeline.
 
+Additionally, in the config file please make sure your untargeted insertion file names do not contain spaces: the config file parser uses spaces to separate file names, so this will cause errors in file name parsing and may result in the pipeline not running correctly. 
+
 ## Spurious Threshold Parameter
 
 SeqVerify allows for a ```--spurious_filtering_threshold``` parameter to be set to control how tightly the filtering of extremely high coverage (and therefore likely spurious for actual insertions) sites is performed. Filtered areas will not be printed out in the insertion site readout, but will be printed to stdout as the pipeline is running for logging purposes.
