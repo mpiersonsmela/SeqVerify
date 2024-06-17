@@ -99,9 +99,9 @@ if args.download_defaults: #If --download_defaults is set, downloads the three d
     os.system('curl -OJX GET "https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/annotation/chm13v2.0_RefSeq_Liftoff_v5.1.gff3.gz" --output-dir seqverify_defaults')
     os.system('gunzip seqverify_defaults/chm13v2.0_RefSeq_Liftoff_v5.1.gff3.gz')
 
-    #Downloads hg38 as a reference genome for the variant calling
-    os.system('curl -OJX GET "http://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/latest/hg38.fa.gz" --output-dir seqverify_defaults')
-    os.system('gunzip seqverify_defaults/hg38.fa.gz')
+    #Downloads GRCh38 version 105 primary assembly (no alt contigs) as a reference genome for the variant calling
+    os.system('curl -OJX GET "ftp://ftp.ensembl.org/pub/release-105/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz" --output-dir seqverify_defaults')
+    os.system('gunzip seqverify_defaults/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz')
 
     #Downloads a KRAKEN-valid 8GB database, PlusPF_8GB
     os.system('mkdir seqverify_defaults/seqverify_database')
@@ -374,10 +374,10 @@ if args.start == "variant" or args.start == "all":
         ##### Do the variant calling #####
         
         #Sets up the three variables needed for variant calling
-        # 1) The genome to be re-aligned to (hg38, given that CHM13 clinvar does not work)
+        # 1) The genome to be re-aligned to (GRCh38, given that CHM13 snpEff does not work)
         # 2) The path to the config file
         # 3) The path to a valid annotation DB
-        variant_genome_source_path = pathFinder(args.variant_calling[0]) #example: "seqverify_database/hg38.fa"
+        variant_genome_source_path = pathFinder(args.variant_calling[0]) #example: "seqverify_database/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
         #variant_config_path = args.variant_calling[1] #not used. Maybe add as optional argument?
         clinvardb_source_path = pathFinder(args.variant_calling[1]) #example: "seqverify_database/clinvar.vcf.gz" Note, vcf.gz.tbi file must also be present
         
@@ -411,11 +411,11 @@ if args.start == "variant" or args.start == "all":
             args.start = "snp_filtering"
         
 if args.start == "snp_filtering" or args.start == "all":
-        variant_genome_source_path = pathFinder(args.variant_calling[0]) #example: "seqverify_database/hg38.fa"
+        variant_genome_source_path = pathFinder(args.variant_calling[0]) #example: "seqverify_database/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
         clinvardb_source_path = pathFinder(args.variant_calling[1]) #example: "seqverify_database/clinvar.vcf.gz" Note, vcf.gz.tbi file must also be present
         
         #Runs snpEff, SnpSift to do a first pass of filtering the variants, saves everything in the main folder for post-pipeline analysis
-        os.system(f"snpEff -dataDir seqverify_defaults -v hg38 {temp_folder}/{variant_vcf} > {temp_folder}/{variant_vcf_ann}")
+        os.system(f"snpEff -dataDir seqverify_defaults -v GRCh38.105 {temp_folder}/{variant_vcf} > {temp_folder}/{variant_vcf_ann}")
         os.system(f"SnpSift annotate -v {clinvardb_source_path} {temp_folder}/{variant_vcf_ann} > {folder_snp}/{variant_vcf_ann}")
         
         #Further filter the reads, saves everything to a readout in the main folder
