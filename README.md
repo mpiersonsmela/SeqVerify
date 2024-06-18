@@ -163,7 +163,23 @@ Pure deletions (i.e. deletions with no insertions) can be achieved by leaving th
 
 Multiple commands are allowed in one command file, and seqverify automatically handles interactions between commands on the same chromosome (i.e. a command's coordinates changing because of a previous command), so all the end user needs to do is use the coordinates straight from their source without any adjustment or calculation. 
 
-## Common Errors
+## Config File
+
+SeqVerify allows for the use of a configuration file to load all of its settings: a blank/default configuration file is bundled with a SeqVerify download under the name ```seqverify.config```. 
+
+Please modify this file without changing the text between square brackets, as modification of the headers in the square brackets will break the file's parsing in the pipeline.
+
+Additionally, in the config file please make sure your untargeted insertion file names do not contain spaces: the config file parser uses spaces to separate file names, so this will cause errors in file name parsing and may result in the pipeline not running correctly. 
+
+## Spurious Threshold Parameter
+
+SeqVerify allows for a ```--spurious_filtering_threshold``` parameter to be set to control how tightly the filtering of extremely high coverage (and therefore likely spurious for actual insertions) sites is performed. Filtered areas will not be printed out in the insertion site readout, but will be printed to stdout as the pipeline is running for logging purposes.
+
+By default, this is set to 0.00001, meaning the pipeline filters out any area with a coverage higher than what we would expect 1-0.00001 = 99.9999% of the areas in the genome to have. This feature can be turned off by setting ```--spurious_filtering_threshold 0```, in which case no filtering will be performed and every insertion site will be reported upon.
+
+## Frequently Asked Questions
+
+### Why am I getting a BCFTools error?
 
 Certain builds of bcftools may not be compatible with all Linux distributions. If the pipeline raises “bcftools: error while loading shared libraries: libgsl.so.25: cannot open shared object file: No such file or directory”, please try forcing Conda to use the Bioconda channel to install bcftools. You can do this by setting your .condarc file to:
 ```
@@ -174,4 +190,15 @@ channels:
   - defaults
 ```
 
+### Can multiple fastq files for the same genome be used in the same command?
+
+No, ```--reads_1``` and ```--reads_2``` can each only take a single fastq file. If you have more than one fastq file for the same genome and want to use SeqVerify on your data, please concatenate all the forward reads together in one file and all the backward reads together in another file through the ```cat``` command.
+
+### Are insertions of human DNA detected in the insertion site detection portion of the pipeline?
+
+Insertions of mitochondrial human DNA can be detected using the ```--mitochondrial``` flag. Insertions of non-mitochondrial human DNA are not currently detectable in SeqVerify, but other tools (such as IGV) can be used to find them manually.
+
+### Are insertions of mitochondrial DNA a sign of contamination/degraded data?
+
+Not necessarily: chromosomal insertions of mitochondrial human DNA are relatively common within the human genome, and are usually not signs of contamination unless unexpectedly found at a known insertion site.
 

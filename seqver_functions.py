@@ -1,7 +1,6 @@
 import re
 import os
 import matplotlib.pyplot as plt
-from math import exp, factorial, comb
 from copy import deepcopy
 from scipy.stats import poisson
 
@@ -204,7 +203,7 @@ def compress(alignment_dict, granularity=500): #compresses the alignments to the
     print("done with read aggregation")
     return final_readout_dict
 
-def filterAndScore(temp_folder,folder_insertion,bam_file,readout_dict,genome,stringency):
+def filterAndScore(temp_folder,folder_insertion,bam_file,readout_dict,threshold_probability,stringency):
     print("reached filtering")
     os.system(f'samtools depth {folder_insertion}/{bam_file} > {temp_folder}/total_coverage.cov')
     total_cov, length = 0,0
@@ -216,9 +215,7 @@ def filterAndScore(temp_folder,folder_insertion,bam_file,readout_dict,genome,str
     read_depth = int(round(total_cov/length, 0))
     print(f"calculated read depth as {read_depth} from {total_cov} total read lengths over length {length}")
     editable_readout = deepcopy(readout_dict)
-    spurious_threshold = 0
-    while poisson.cdf(spurious_threshold,read_depth) < 0.99999:
-        spurious_threshold += 1
+    spurious_threshold = poisson.ppf(float(1-threshold_probability), read_depth)
     print(f"spurious threshold is {spurious_threshold}, proceeding to scoring...")
     with open(f"{temp_folder}/confidence.bed","w+") as bed:
         for read_chromosome, alignments in readout_dict.items():
@@ -246,6 +243,7 @@ def filterAndScore(temp_folder,folder_insertion,bam_file,readout_dict,genome,str
             for site, repetitions in sites.items():
                 current_site = (alignment_chromosome,site)
                 if current_site in to_delete:
+                    print(f"pruning the site aligned to the {alignment_chromosome} untargeted edit and {read_chromosome} on the genome at coordinate {site}")
                     del editable_readout[read_chromosome][alignment_chromosome][site]
     print("filtering complete")
     return [readout_dict,editable_readout]

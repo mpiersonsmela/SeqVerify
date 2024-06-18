@@ -3,6 +3,7 @@
 import argparse
 import os
 import sys
+import configparser
 from seqver_functions import *
 from seqver_plots import *
 from seqver_genomeupdate import *
@@ -18,6 +19,7 @@ parser.add_argument('--reads_1', type=str, required=False) #Name/Path of First .
 parser.add_argument('--reads_2', type=str, required=False) #Name/Path of Second .fq file for reads
 parser.add_argument('--untargeted', type=str, required=False, nargs='+') #Name/Path of transgenes to be appended to the genome as extra sequences
 parser.add_argument('--targeted', type=str, required=False) #Name/Path of command file instructing where to insert known-insertion transgenes
+parser.add_argument('--keepgoing',action='store_const',const=True,required=False,default=False) #continue to next part after completing
 parser.add_argument('--keep_temp', action='store_const',const=True, required=False, default=False) #HIGHLY RECOMMENDED - Option to delete temporary files when the pipeline is done
 
 #Genome arguments
@@ -34,9 +36,9 @@ parser.add_argument('--threads',type=int,required=False, default=1) #How many th
 parser.add_argument('--max_mem', type=str, required=False, default='16G') #Max memory allowed, ending in capital "G" or "M"
 parser.add_argument('--min_matches', type=int, required=False,default=1) #How many times an insertion needs to align to the reference genome to show up in the readout
 parser.add_argument('--start', type=str, required=False, default="all") #which section of the code to run
-parser.add_argument('--keepgoing',action='store_const',const=True,required=False,default=False) #continue to next part after completing
 parser.add_argument('--mitochondrial',action='store_const',const=True,required=False,default=False) #runs insertion site detection on mitochondrial DNA
 parser.add_argument('--stringency',type=float, required=False, default=0.005) #sets stringency for the confidence score calculations
+parser.add_argument('--spurious_filtering_threshold', type=float, required=False, default=0.00001)
 
 #CNV/Plotting Arguments
 parser.add_argument('--manual_plots',action='store_const',const=True,required=False,default=False) #Flag enabling matplotlib plots instead of IGV plots 
@@ -45,14 +47,45 @@ parser.add_argument('--bin_size',type=int, required=False, default=100000) #If m
 #Variant Calling Arguments
 parser.add_argument('--variant_calling',nargs=2,type=str,required=False) #Space-separated: the Path/File to the hg38 genome, the SnpEff.jar config path, the clinvar DB path
 parser.add_argument('--variant_intensity',type=str,required=False,default="MODERATE") #Minimum severity needed for a variant to show up in the readout, can be set to "MODIFIER", "LOW", "MODERATE", or "HIGH"
+parser.add_argument('--variant_window_size',type=int,required=False,default=10000) #Makes sure all variants within variant_window_size of any command's start are printed, regardless of their quality or intensity.  
 
 #Other
 parser.add_argument('--download_defaults',action='store_const',const=True,required=False,default=False) #Downloads hg38.p14, CHM13 V2.0, and the PFPlus-8GB KRAKEN2 DB for ease of use. Terminates the program after doing that
 parser.add_argument('--similarity',nargs=2,type=str,required=False) #Runs the SNP similarity checker
-parser.add_argument('--min_quality',type=int,required=False,default=3 )
+parser.add_argument('--min_quality',type=int,required=False,default=3)
+parser.add_argument('--config',type=str,required=False,default=None)
 
 args = parser.parse_args()
 
+if args.config is not None:
+    config = configparser.ConfigParser(allow_no_value=True)
+    config.read(args.config)
+
+    args.output = config["MAIN"]["output"]
+    args.reads_1 = config["MAIN"]["reads_1"]
+    args.reads_2 = config["MAIN"]["reads_2"]
+    args.untargeted = config["MAIN"]["untargeted"].split(" ")
+    args.targeted = config["MAIN"]["targeted"]
+    args.keepgoing = config["MAIN"]["keepgoing"]
+    args.keep_temp = bool(config["MAIN"]["keep_temp"])
+    args.genome = config["GENOME"]["genome"]
+    args.gtf = config["GENOME"]["gtf"]
+    args.kraken = bool(config["KRAKEN2"]["kraken"])
+    args.database = config["KRAKEN2"]["database"]
+    args.granularity = int(config["INSERTION"]["granularity"])
+    args.threads = int(config["INSERTION"]["threads"])
+    args.max_mem = config["INSERTION"]["max_mem"]
+    args.min_matches = int(config["INSERTION"]["min_matches"])
+    args.start = config["INSERTION"]["start"]
+    args.mitochondrial = config["INSERTION"]["mitochondrial"]
+    args.stringency = float(config["INSERTION"]["stringency"])
+    args.spurious_filtering_threshold = float(config["INSERTION"]["spurious_filtering_threshold"])
+    args.manual_plots = config["CNV"]["manual_plots"]
+    args.bin_size = int(config["CNV"]["bin_size"])
+    args.variant_calling = eval(config["VARIANT"]["variant_calling"])
+    args.variant_intensity = config["VARIANT"]["variant_intensity"]
+    args.variant_window_size = int(config["VARIANT"]["variant_window_size"])
+    args.min_quality = int(config["OTHER"]["min_quality"])
 
 if args.download_defaults: #If --download_defaults is set, downloads the three databases and quits the program
     #Note:  These FTP links are likely to change over time and break the command. 
@@ -67,9 +100,9 @@ if args.download_defaults: #If --download_defaults is set, downloads the three d
     os.system('curl -OJX GET "https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/annotation/chm13v2.0_RefSeq_Liftoff_v5.1.gff3.gz" --output-dir seqverify_defaults')
     os.system('gunzip seqverify_defaults/chm13v2.0_RefSeq_Liftoff_v5.1.gff3.gz')
 
-    #Downloads hg38 as a reference genome for the variant calling
-    os.system('curl -OJX GET "http://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/latest/hg38.fa.gz" --output-dir seqverify_defaults')
-    os.system('gunzip seqverify_defaults/hg38.fa.gz')
+    #Downloads GRCh38 version 105 primary assembly (no alt contigs) as a reference genome for the variant calling
+    os.system('curl -OJX GET "ftp://ftp.ensembl.org/pub/release-105/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz" --output-dir seqverify_defaults')
+    os.system('gunzip seqverify_defaults/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz')
 
     #Downloads a KRAKEN-valid 8GB database, PlusPF_8GB
     os.system('mkdir seqverify_defaults/seqverify_database')
@@ -255,7 +288,7 @@ if args.start == "readout" or args.start == "all": #lines 244-249 have been unin
     #Takes "diff_chr", generates a .txt human-readable readout of the insertion sites, places it into the output folder.
     data = group(f'{temp_folder}/{aligned_diff_chr}')
     insertions = compress(data,granularity_threshold)
-    filteredInsertions = filterAndScore(temp_folder,folder_insertion,aligned_diff_chr_bam,insertions,genome_source_path,args.stringency)
+    filteredInsertions = filterAndScore(temp_folder,folder_insertion,aligned_diff_chr_bam,insertions,args.spurious_filtering_threshold,args.stringency)
     readout(folder_insertion,filteredInsertions[1],filteredInsertions[0],marker_list,min_matches)
     
     if args.keepgoing:
@@ -342,10 +375,10 @@ if args.start == "variant" or args.start == "all":
         ##### Do the variant calling #####
         
         #Sets up the three variables needed for variant calling
-        # 1) The genome to be re-aligned to (hg38, given that CHM13 clinvar does not work)
+        # 1) The genome to be re-aligned to (GRCh38, given that CHM13 snpEff does not work)
         # 2) The path to the config file
         # 3) The path to a valid annotation DB
-        variant_genome_source_path = pathFinder(args.variant_calling[0]) #example: "seqverify_database/hg38.fa"
+        variant_genome_source_path = pathFinder(args.variant_calling[0]) #example: "seqverify_database/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
         #variant_config_path = args.variant_calling[1] #not used. Maybe add as optional argument?
         clinvardb_source_path = pathFinder(args.variant_calling[1]) #example: "seqverify_database/clinvar.vcf.gz" Note, vcf.gz.tbi file must also be present
         
@@ -379,15 +412,18 @@ if args.start == "variant" or args.start == "all":
             args.start = "snp_filtering"
         
 if args.start == "snp_filtering" or args.start == "all":
-        variant_genome_source_path = pathFinder(args.variant_calling[0]) #example: "seqverify_database/hg38.fa"
+        variant_genome_source_path = pathFinder(args.variant_calling[0]) #example: "seqverify_database/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
         clinvardb_source_path = pathFinder(args.variant_calling[1]) #example: "seqverify_database/clinvar.vcf.gz" Note, vcf.gz.tbi file must also be present
         
         #Runs snpEff, SnpSift to do a first pass of filtering the variants, saves everything in the main folder for post-pipeline analysis
-        os.system(f"snpEff -dataDir seqverify_defaults -v hg38 {temp_folder}/{variant_vcf} > {temp_folder}/{variant_vcf_ann}")
+        os.system(f"snpEff -dataDir seqverify_defaults -v GRCh38.105 {temp_folder}/{variant_vcf} > {temp_folder}/{variant_vcf_ann}")
         os.system(f"SnpSift annotate -v {clinvardb_source_path} {temp_folder}/{variant_vcf_ann} > {folder_snp}/{variant_vcf_ann}")
         
         #Further filter the reads, saves everything to a readout in the main folder
-        mutation_logger(folder_snp,variant_lof,variant_vcf_ann,args.min_quality,args.variant_intensity)
+        if exact_path is None:
+            mutation_logger(folder_snp,variant_lof,variant_vcf_ann,args.min_quality,args.variant_intensity, args.variant_window_size)
+        else:
+            mutation_logger(folder_snp,variant_lof,variant_vcf_ann,args.min_quality,args.variant_intensity, args.variant_window_size, exact_path)
     #If deletion of files is enabled (which is it by default), deletes the temp folder.
     #This is recommended, especially since temp files contain SAM files that can get to 100+ GB depending on the size of the original inputs.
 if not args.keep_temp:
