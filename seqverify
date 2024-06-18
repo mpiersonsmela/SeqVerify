@@ -19,6 +19,7 @@ parser.add_argument('--reads_1', type=str, required=False) #Name/Path of First .
 parser.add_argument('--reads_2', type=str, required=False) #Name/Path of Second .fq file for reads
 parser.add_argument('--untargeted', type=str, required=False, nargs='+') #Name/Path of transgenes to be appended to the genome as extra sequences
 parser.add_argument('--targeted', type=str, required=False) #Name/Path of command file instructing where to insert known-insertion transgenes
+parser.add_argument('--keepgoing',action='store_const',const=True,required=False,default=False) #continue to next part after completing
 parser.add_argument('--keep_temp', action='store_const',const=True, required=False, default=False) #HIGHLY RECOMMENDED - Option to delete temporary files when the pipeline is done
 
 #Genome arguments
@@ -35,7 +36,6 @@ parser.add_argument('--threads',type=int,required=False, default=1) #How many th
 parser.add_argument('--max_mem', type=str, required=False, default='16G') #Max memory allowed, ending in capital "G" or "M"
 parser.add_argument('--min_matches', type=int, required=False,default=1) #How many times an insertion needs to align to the reference genome to show up in the readout
 parser.add_argument('--start', type=str, required=False, default="all") #which section of the code to run
-parser.add_argument('--keepgoing',action='store_const',const=True,required=False,default=False) #continue to next part after completing
 parser.add_argument('--mitochondrial',action='store_const',const=True,required=False,default=False) #runs insertion site detection on mitochondrial DNA
 parser.add_argument('--stringency',type=float, required=False, default=0.005) #sets stringency for the confidence score calculations
 parser.add_argument('--spurious_filtering_threshold', type=float, required=False, default=0.00001)
@@ -53,7 +53,7 @@ parser.add_argument('--variant_window_size',type=int,required=False,default=1000
 parser.add_argument('--download_defaults',action='store_const',const=True,required=False,default=False) #Downloads hg38.p14, CHM13 V2.0, and the PFPlus-8GB KRAKEN2 DB for ease of use. Terminates the program after doing that
 parser.add_argument('--similarity',nargs=2,type=str,required=False) #Runs the SNP similarity checker
 parser.add_argument('--min_quality',type=int,required=False,default=3)
-parser.add_argument('--config',type=str,required=False,default=3)
+parser.add_argument('--config',type=str,required=False,default=None)
 
 args = parser.parse_args()
 
@@ -66,6 +66,7 @@ if args.config is not None:
     args.reads_2 = config["MAIN"]["reads_2"]
     args.untargeted = config["MAIN"]["untargeted"].split(" ")
     args.targeted = config["MAIN"]["targeted"]
+    args.keepgoing = config["MAIN"]["keepgoing"]
     args.keep_temp = bool(config["MAIN"]["keep_temp"])
     args.genome = config["GENOME"]["genome"]
     args.gtf = config["GENOME"]["gtf"]
@@ -76,7 +77,6 @@ if args.config is not None:
     args.max_mem = config["INSERTION"]["max_mem"]
     args.min_matches = int(config["INSERTION"]["min_matches"])
     args.start = config["INSERTION"]["start"]
-    args.keepgoing = config["INSERTION"]["keepgoing"]
     args.mitochondrial = config["INSERTION"]["mitochondrial"]
     args.stringency = float(config["INSERTION"]["stringency"])
     args.spurious_filtering_threshold = float(config["INSERTION"]["spurious_filtering_threshold"])
@@ -84,6 +84,7 @@ if args.config is not None:
     args.bin_size = int(config["CNV"]["bin_size"])
     args.variant_calling = eval(config["VARIANT"]["variant_calling"])
     args.variant_intensity = config["VARIANT"]["variant_intensity"]
+    args.variant_calling = int(config["VARIANT"]["variant_window_size"])
     args.min_quality = int(config["OTHER"]["min_quality"])
 
 if args.download_defaults: #If --download_defaults is set, downloads the three databases and quits the program
