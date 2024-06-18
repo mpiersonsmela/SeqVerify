@@ -84,7 +84,7 @@ if args.config is not None:
     args.bin_size = int(config["CNV"]["bin_size"])
     args.variant_calling = eval(config["VARIANT"]["variant_calling"])
     args.variant_intensity = config["VARIANT"]["variant_intensity"]
-    args.variant_calling = int(config["VARIANT"]["variant_window_size"])
+    args.variant_window_size = int(config["VARIANT"]["variant_window_size"])
     args.min_quality = int(config["OTHER"]["min_quality"])
 
 if args.download_defaults: #If --download_defaults is set, downloads the three databases and quits the program
