@@ -6,6 +6,7 @@ channels:
 dependencies:
   - bcftools
   - blast
+  - bracken
   - bwa
   - cnvpytor
   - htslib
