@@ -41,10 +41,10 @@ seqverify --output output_name --reads_1 sample_1.fastq --reads_2 sample_2.fastq
 SeqVerify has the following standard arguments:
 * ```--output``` (Type: String) Used as the identifying name for all the files and folders to do with the particular call. E.g. ```--output Sample1``` will cause the output folder to be named "Sample1_seqverify".
 * ```--reads_1``` and ```--reads_2``` (Type: String/Path) The paired-read FASTA/FASTQ, or gzipped FASTA/FASTQ source files for the reads. Also accepts paths to the files if they're not in the working folder.
-* ```--genome``` (Type: String/Path) Name or path of FASTA file to be used as reference genome for the reads (e.g. [CHM13](https://github.com/marbl/CHM13#downloads)). If not included, will default to CHM13v2.0, downloaded through ```--download-defaults```.
+* ```--genome``` (Type: String/Path) Name or path of FASTA file to be used as reference genome for the reads (e.g. [CHM13](https://github.com/marbl/CHM13#downloads)). If not included, will default to CHM13v2.0, downloaded through ```--download_defaults```.
 * ```--untargeted``` (Type: String/Path) Names or paths of FASTA files containing the sequences of the markers to detect (transgenes, unwanted plasmids, etc.). Accepts more than one if necessary, space-separated. Can also be left blank; not mutually exclusive with ```--targeted```. 
 * ```--targeted``` (Type: String/Path) Name or path to a valid command file for insertion of markers where the insertion site is known. Further details on the construction of a valid command files are given below. Only accepts one command file (but a command file can have multiple commands, so this will not restrict analysis). Can be left blank; not mutually exclusive with ```--untargeted```.
-* ```--gtf``` (Type: String/Path) Name or path to valid GTF/GFF3 file for the genome used, to be updated with the exact edits specified in ```--targeted```. If not included, will default to ```--download-defaults```'s GFF3 file for CHM13v2.0.
+* ```--gtf``` (Type: String/Path) Name or path to valid GTF/GFF3 file for the genome used, to be updated with the exact edits specified in ```--targeted```. If not included, will default to ```--download_defaults```'s GFF3 file for CHM13v2.0.
 
 SeqVerify has the following optional arguments:
 ##### Performance
@@ -64,7 +64,7 @@ This option may be useful for core optimization on clusters: e.g. "beginning" is
 
 ##### KRAKEN2
 * ```--kraken``` Enables KRAKEN2 analysis. If using a custom database, requires the ```--database``` option.
-* ```--database``` (Type: String/Path) Path to valid KRAKEN2 database, or, if the KRAKEN2 environmental variables are set, the name of the database. Only needed if ```--kraken``` set; if not set when ```--kraken``` is used, will default to the 8GB PlusPFP database downloaded by ```--download-defaults```.
+* ```--database``` (Type: String/Path) Path to valid KRAKEN2 database, or, if the KRAKEN2 environmental variables are set, the name of the database. Only needed if ```--kraken``` set; if not set when ```--kraken``` is used, will default to the 8GB PlusPFP database downloaded by ```--download_defaults```.
 ##### Insertion Site Detection
 * ```--granularity``` (Type: Integer) Determines how large (in bp) insertion site bins are, i.e. how far apart two insertions can be in order to count as the same insertion site. Set by default to 500, a value of 1 means all insertions on different coordinates will be counted as different insertion sites and show up separately on the readout.
 * ```--min_matches``` (Type: Integer) Determines the minimum number of matches/insertions required for an insertion site to appear on the readout. Set by default to 1, i.e. shows any insertion, some of which may be false positives due to repetitive DNA or similar variables.
