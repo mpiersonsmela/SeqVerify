@@ -171,8 +171,23 @@ gtf = None
 
 granularity_threshold = args.granularity
 
-if args.untargeted is not None:
+if args.untargeted is not None and args.untargeted != []:
     marker_sources_path = [pathFinder(i) for i in args.untargeted]
+else:
+    marker_sources_path = []
+
+if args.targeted is None and not marker_sources_path:
+    print("No targeted or untargeted sequences specified. Using the original genome file.")
+    os.system(f'cp {genome_source_path} {temp_folder}/{genome_with_markers}')
+else:
+    os.system(f'cp {genome_source_path} {temp_folder}/{genome_with_markers}')
+    if marker_sources_path:
+        for file in marker_sources_path:
+            print(f'COMMAND FOR MARKER SOURCES PATH: echo "$(cat {file})" >> {temp_folder}/{marker_list_file}')
+            os.system(f'echo "$(cat {file})" >> {temp_folder}/{marker_list_file}')
+
+        print(f'ADDING TO COLLATED FILE: echo "$(cat {temp_folder}/{marker_list_file})" >> {temp_folder}/{genome_with_markers}')
+        os.system(f'echo "$(cat {temp_folder}/{marker_list_file})" >> {temp_folder}/{genome_with_markers}')
 
 if args.targeted is not None:
     exact_path = pathFinder(args.targeted)
@@ -252,7 +267,7 @@ if args.start == "align" or args.start == "all":
     if args.keepgoing:
         print("Finished align, continuing to markers")
         args.start = "markers"
-    
+
 if args.start == "markers" or args.start == "all":
     os.system(f'mkdir -p {folder_insertion}')
     if marker_sources_path != []:
