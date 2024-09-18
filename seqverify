@@ -314,7 +314,8 @@ if args.start == "readout" or args.start == "all": #lines 244-249 have been unin
         args.start = "cnv"
 
 # Manta analysis for structural variant detection
-if args.start == "manta" or args.start == "all":
+# This process is executed only with the --run_manta flag
+if args.run_manta and (args.start == "manta" or args.start == "all"):
     print("Starting Manta analysis for structural variant detection")
 
     # Create output directory for Manta results
