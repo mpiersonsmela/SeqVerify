@@ -49,6 +49,9 @@ parser.add_argument('--variant_calling',nargs=2,type=str,required=False) #Space-
 parser.add_argument('--variant_intensity',type=str,required=False,default="MODERATE") #Minimum severity needed for a variant to show up in the readout, can be set to "MODIFIER", "LOW", "MODERATE", or "HIGH"
 parser.add_argument('--variant_window_size',type=int,required=False,default=10000) #Makes sure all variants within variant_window_size of any command's start are printed, regardless of their quality or intensity.  
 
+#Structural Variant Detection
+parser.add_argument('--run_manta', action='store_true', required=False, default=False, help='Run Manta for structural variant detection') #Adds the option to run Manta for structural variant detection
+
 #Other
 parser.add_argument('--download_defaults',action='store_const',const=True,required=False,default=False) #Downloads hg38.p14, CHM13 V2.0, and the PFPlus-8GB KRAKEN2 DB for ease of use. Terminates the program after doing that
 parser.add_argument('--similarity',nargs=2,type=str,required=False) #Runs the SNP similarity checker
@@ -310,6 +313,21 @@ if args.start == "readout" or args.start == "all": #lines 244-249 have been unin
         print("Finished markers, continuing to CNV")
         args.start = "cnv"
 
+# Manta analysis for structural variant detection
+if args.start == "manta" or args.start == "all":
+    print("Starting Manta analysis for structural variant detection")
+
+    # Create output directory for Manta results
+    manta_output_dir = f'{folder}/manta_results'
+    os.makedirs(manta_output_dir, exist_ok=True)
+    
+    os.system(f'configManta.py --bam {folder_insertion}/{aligned_diff_chr_bam} --referenceFasta {genome_source_path} --runDir {manta_output_dir}')
+    os.system(f'{manta_output_dir}/runWorkflow.py -j {threads}')
+
+    if args.keepgoing:
+        print(f"Manta analysis completed. Results can be found in {manta_output_dir}")
+        args.start = "cnv"
+    
 if args.start == "cnv" or args.start == "all":
     os.system(f'mkdir -p {folder_cnv}')
     #CNVPytor Logic/Commands, these create a .pytor file for the BAM file and go through all the steps necessary to generate a final plot of the entire genome for ease of CNV analysis
