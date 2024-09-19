@@ -49,9 +49,6 @@ parser.add_argument('--variant_calling',nargs=2,type=str,required=False) #Space-
 parser.add_argument('--variant_intensity',type=str,required=False,default="MODERATE") #Minimum severity needed for a variant to show up in the readout, can be set to "MODIFIER", "LOW", "MODERATE", or "HIGH"
 parser.add_argument('--variant_window_size',type=int,required=False,default=10000) #Makes sure all variants within variant_window_size of any command's start are printed, regardless of their quality or intensity.  
 
-#Structural Variant Detection
-parser.add_argument('--run_manta', action='store_true', required=False, default=False, help='Run Manta for structural variant detection') #Adds the option to run Manta for structural variant detection
-
 #Other
 parser.add_argument('--download_defaults',action='store_const',const=True,required=False,default=False) #Downloads hg38.p14, CHM13 V2.0, and the PFPlus-8GB KRAKEN2 DB for ease of use. Terminates the program after doing that
 parser.add_argument('--similarity',nargs=2,type=str,required=False) #Runs the SNP similarity checker
@@ -156,7 +153,6 @@ folder_insertion = f"{folder}/insertion"
 folder_cnv = f"{folder}/copy_number"
 folder_kraken = f"{folder}/kraken"
 folder_snp =f"{folder}/variant_calling"
-folder_manta = f"{folder}/manta"
 
 if args.similarity is not None: #similarity also requires --output to be set, takes two arguments: first the original cell line, then the modified cell line, then --min_quality can be set to change the minimum quality (default: 100).
     compare(args.similarity[0],args.similarity[1],args.min_quality,temp_folder,folder,vcf_similarity, vcf_isec)
@@ -175,23 +171,8 @@ gtf = None
 
 granularity_threshold = args.granularity
 
-if args.untargeted is not None and args.untargeted != []:
+if args.untargeted is not None:
     marker_sources_path = [pathFinder(i) for i in args.untargeted]
-else:
-    marker_sources_path = []
-
-if args.targeted is None and not marker_sources_path:
-    print("No targeted or untargeted sequences specified. Using the original genome file.")
-    os.system(f'cp {genome_source_path} {temp_folder}/{genome_with_markers}')
-else:
-    os.system(f'cp {genome_source_path} {temp_folder}/{genome_with_markers}')
-    if marker_sources_path:
-        for file in marker_sources_path:
-            print(f'COMMAND FOR MARKER SOURCES PATH: echo "$(cat {file})" >> {temp_folder}/{marker_list_file}')
-            os.system(f'echo "$(cat {file})" >> {temp_folder}/{marker_list_file}')
-
-        print(f'ADDING TO COLLATED FILE: echo "$(cat {temp_folder}/{marker_list_file})" >> {temp_folder}/{genome_with_markers}')
-        os.system(f'echo "$(cat {temp_folder}/{marker_list_file})" >> {temp_folder}/{genome_with_markers}')
 
 if args.targeted is not None:
     exact_path = pathFinder(args.targeted)
@@ -271,7 +252,7 @@ if args.start == "align" or args.start == "all":
     if args.keepgoing:
         print("Finished align, continuing to markers")
         args.start = "markers"
-
+    
 if args.start == "markers" or args.start == "all":
     os.system(f'mkdir -p {folder_insertion}')
     if marker_sources_path != []:
@@ -313,19 +294,7 @@ if args.start == "readout" or args.start == "all": #lines 244-249 have been unin
     if args.keepgoing:
         print("Finished markers, continuing to CNV")
         args.start = "cnv"
-        
-if args.run_manta and (args.start == "manta" or args.start == "all"):
-    os.system(f'mkdir -p {folder_manta}')
-    # Manta Logic/Commands, manta can be installed through conda. Manta generates a .vcf file that can be used for structural variant detection.
-    # This process is executed only with the --run_manta flag
-    
-    os.system(f'configManta.py --bam {folder_insertion}/{aligned_diff_chr_bam} --referenceFasta {genome_source_path} --runDir {folder_manta}')
-    os.system(f'{folder_manta}/runWorkflow.py -j {threads}')
 
-    if args.keepgoing:
-        print(f"Manta analysis completed. Results can be found in {folder_manta}")
-        args.start = "cnv"
-    
 if args.start == "cnv" or args.start == "all":
     os.system(f'mkdir -p {folder_cnv}')
     #CNVPytor Logic/Commands, these create a .pytor file for the BAM file and go through all the steps necessary to generate a final plot of the entire genome for ease of CNV analysis
@@ -352,45 +321,28 @@ if args.start == "cnv" or args.start == "all":
 if args.start == "plots" or args.start == "all":
     os.system(f'mkdir -p {folder_cnv}')
     try:
-        if 'commands' not in locals() or commands is None:
-            raise NameError("commands not defined")
-        if 'marker_list' not in locals() or marker_list is None:
-            raise NameError("marker_list not defined")
-        region_bed(temp_folder, header, commands, marker_list, bed_file)
-    except NameError as e:
-        print(f"Warning: {str(e)}. Attempting to regenerate necessary data.")
-        if exact_path is not None:
-            commands = commandHandler(genome_source_path, exact_path, temp_folder, genome_with_markers, return_commands_only=True)
-        else:
-            commands = []
-        
-        if os.path.exists(f'{temp_folder}/{marker_list_file}'):
-            with open(f'{temp_folder}/{marker_list_file}') as f:
-                marker_list = [i[1:].strip() for i in f if i.startswith('>')]
-            markers = "|".join(marker_list)
-        else:
-            print(f"Warning: Marker list file not found: {marker_list_file}")
-            marker_list = []
-            markers = ""
-        
-        region_bed(temp_folder, header, commands, marker_list, bed_file)
-
-    # Plotting Logic
+        region_bed(temp_folder,header,commands,marker_list,bed_file) #Creates a bed file to be used as coordinates for the IGV screenshot engine.
+    except NameError: #regenerate commands if the beginning step was skipped
+        commands = commandHandler(genome_source_path,exact_path,temp_folder,genome_with_markers, return_commands_only = True)
+        with open(f'{temp_folder}/{marker_list_file}') as f:
+            marker_list = [i[1:].strip() for i in f if i.startswith('>')]
+        markers = "|".join(marker_list)
+        region_bed(temp_folder,header,commands,marker_list,bed_file)
+    #Plotting Logic
     if not args.manual_plots:
-        # If IGV plots are used (default option)
+        #If IGV plots are used (default option), creates plots of the transgenes through IGV: the .bed file here is used to direct IGV towards the relevant regions of the genome
         if args.gtf is not None:
-            gtf = new_gtf_sorted  # don't put {folder_insertion} at the front
-        igvScreenshot_new(temp_folder, folder_insertion, f'{folder_insertion}/{aligned_diff_chr_bam}', f'{folder_insertion}/{genome_with_markers}', bed_file, gtf_file=gtf)
+            gtf = new_gtf_sorted #don't put {folder_insertion} at the front
+        igvScreenshot_new(temp_folder,folder_insertion,f'{folder_insertion}/{aligned_diff_chr_bam}',f'{folder_insertion}/{genome_with_markers}',bed_file, gtf_file=gtf)
     else:
-        # If matplotlib plots are used
-        if os.path.exists(f'{folder_insertion}/{aligned_diff_chr_bam}'):
-            os.system(f'samtools depth -b {bed_file} {folder_insertion}/{aligned_diff_chr_bam} > {temp_folder}/{overall_coverage}')
-            chrHistograms(f'{temp_folder}/{overall_coverage}', marker_list)
-            os.system(f'mv fig_* {folder_insertion}')
-            os.system(f'mv *.cov {temp_folder}')
-        else:
-            print(f"Warning: Aligned BAM file not found: {folder_insertion}/{aligned_diff_chr_bam}")
-
+        #If IGV plots are not used, creates matplotlib plots of the transgene copy numbers: the .bed file here is used to direct samtools depth towards the relevant regions to cut down time.
+        os.system(f'samtools depth -b {bed_file} {folder_insertion}/{aligned_diff_chr_bam} > {temp_folder}/{overall_coverage}')
+        #Creates the histograms (refer to seqver_plots.py for more information)
+        chrHistograms(f'{temp_folder}/{overall_coverage}',marker_list)
+        #Moves the plots and the coverage maps to the main and temp folders, respectively.
+        os.system(f'mv fig_* {folder_insertion}')
+        os.system(f'mv *.cov {temp_folder}')
+        
     if args.keepgoing:
         print("Finished plots, continuing to Kraken (if enabled)")
         args.start = "kraken"
