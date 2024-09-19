@@ -402,6 +402,7 @@ if args.start == "plots" or args.start == "all":
                 os.system(f'samtools view -H {folder_insertion}/{aligned_diff_chr_bam} > {temp_folder}/temp_header.sam')
                 with open(f'{temp_folder}/temp_header.sam', 'r') as header_file:
                     header = header_file.read()
+                print("Header successfully recreated.")
             except Exception as header_error:
                 print(f"Error recreating header: {header_error}")
                 print("Proceeding without header. This may cause issues in subsequent steps.")
