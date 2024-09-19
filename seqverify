@@ -156,6 +156,7 @@ folder_insertion = f"{folder}/insertion"
 folder_cnv = f"{folder}/copy_number"
 folder_kraken = f"{folder}/kraken"
 folder_snp =f"{folder}/variant_calling"
+folder_manta = f"{folder}/manta"
 
 if args.similarity is not None: #similarity also requires --output to be set, takes two arguments: first the original cell line, then the modified cell line, then --min_quality can be set to change the minimum quality (default: 100).
     compare(args.similarity[0],args.similarity[1],args.min_quality,temp_folder,folder,vcf_similarity, vcf_isec)
@@ -312,21 +313,17 @@ if args.start == "readout" or args.start == "all": #lines 244-249 have been unin
     if args.keepgoing:
         print("Finished markers, continuing to CNV")
         args.start = "cnv"
-
-# Manta analysis for structural variant detection
-# This process is executed only with the --run_manta flag
+        
 if args.run_manta and (args.start == "manta" or args.start == "all"):
-    print("Starting Manta analysis for structural variant detection")
-
-    # Create output directory for Manta results
-    manta_output_dir = f'{folder}/manta_results'
-    os.makedirs(manta_output_dir, exist_ok=True)
+    os.system(f'mkdir -p {folder_manta}')
+    # Manta Logic/Commands, manta can be installed through conda. Manta generates a .vcf file that can be used for structural variant detection.
+    # This process is executed only with the --run_manta flag
     
-    os.system(f'configManta.py --bam {folder_insertion}/{aligned_diff_chr_bam} --referenceFasta {genome_source_path} --runDir {manta_output_dir}')
-    os.system(f'{manta_output_dir}/runWorkflow.py -j {threads}')
+    os.system(f'configManta.py --bam {folder_insertion}/{aligned_diff_chr_bam} --referenceFasta {genome_source_path} --runDir {folder_manta}')
+    os.system(f'{folder_manta}/runWorkflow.py -j {threads}')
 
     if args.keepgoing:
-        print(f"Manta analysis completed. Results can be found in {manta_output_dir}")
+        print(f"Manta analysis completed. Results can be found in {folder_manta}")
         args.start = "cnv"
     
 if args.start == "cnv" or args.start == "all":
