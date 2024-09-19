@@ -101,7 +101,7 @@ if args.download_defaults: #If --download_defaults is set, downloads the three d
     os.system('gunzip seqverify_defaults/chm13v2.0_RefSeq_Liftoff_v5.1.gff3.gz')
 
     #Downloads GRCh38 version 105 primary assembly (no alt contigs) as a reference genome for the variant calling
-    os.system('curl -OJX GET "ftp://ftp.ensembl.org/pub/release-105/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz" --output-dir seqverify_defaults')
+    os.system('curl -OJX GET "https://ftp.ensembl.org/pub/release-105/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz" --output-dir seqverify_defaults')
     os.system('gunzip seqverify_defaults/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz')
 
     #Downloads a KRAKEN-valid 8GB database, PlusPF_8GB
@@ -368,13 +368,72 @@ if args.start == "cnv" or args.start == "all":
 if args.start == "plots" or args.start == "all":
     os.system(f'mkdir -p {folder_cnv}')
     try:
-        region_bed(temp_folder,header,commands,marker_list,bed_file) #Creates a bed file to be used as coordinates for the IGV screenshot engine.
-    except NameError: #regenerate commands if the beginning step was skipped
-        commands = commandHandler(genome_source_path,exact_path,temp_folder,genome_with_markers, return_commands_only = True)
-        with open(f'{temp_folder}/{marker_list_file}') as f:
-            marker_list = [i[1:].strip() for i in f if i.startswith('>')]
-        markers = "|".join(marker_list)
-        region_bed(temp_folder,header,commands,marker_list,bed_file)
+        region_bed(temp_folder, header, commands, marker_list, bed_file)
+    except NameError as e:
+        print(f"NameError occurred: {e}")
+        print("Attempting to regenerate necessary data...")
+        
+        # commands re-generation if not already defined
+        if 'exact_path' in locals() and exact_path is not None:
+            try:
+                commands = commandHandler(genome_source_path, exact_path, temp_folder, genome_with_markers, return_commands_only=True)
+            except Exception as cmd_error:
+                print(f"Error in commandHandler: {cmd_error}")
+                commands = []
+        else:
+            print("exact_path is not defined or None. Setting commands to empty list.")
+            commands = []
+        
+        # marker_list re-generation if not already defined
+        try:
+            with open(f'{temp_folder}/{marker_list_file}') as f:
+                marker_list = [i[1:].strip() for i in f if i.startswith('>')]
+            markers = "|".join(marker_list)
+        except FileNotFoundError:
+            print(f"marker_list_file not found: {marker_list_file}")
+            marker_list = []
+            markers = ""
+
+        # bed_file re-generation if not already defined
+        if 'header' not in locals() or header is None:
+            print("Warning: 'header' is not defined. Attempting to recreate it.")
+            try:
+                # header retrieval from BAM file
+                os.system(f'samtools view -H {folder_insertion}/{aligned_diff_chr_bam} > {temp_folder}/temp_header.sam')
+                with open(f'{temp_folder}/temp_header.sam', 'r') as header_file:
+                    header = header_file.read()
+            except Exception as header_error:
+                print(f"Error recreating header: {header_error}")
+                print("Proceeding without header. This may cause issues in subsequent steps.")
+                header = ""
+
+        # bed_file execution
+        try:
+            if all(var is not None for var in [temp_folder, header, commands, marker_list, bed_file]):
+                region_bed(temp_folder, header, commands, marker_list, bed_file)
+                print(f"Bed file created successfully: {bed_file}")
+            else:
+                missing_vars = [var for var in ['temp_folder', 'header', 'commands', 'marker_list', 'bed_file'] if locals().get(var) is None]
+                print(f"Error: Missing required variables for region_bed: {', '.join(missing_vars)}")
+        except Exception as region_bed_error:
+            print(f"Error in region_bed: {region_bed_error}")
+            print("Failed to create bed file. This may affect subsequent steps.")
+
+        # error handling for bed_file creation
+        if os.path.exists(bed_file):
+            print(f"Bed file exists at: {bed_file}")
+        else:
+            print(f"Warning: Bed file not found at: {bed_file}")
+            print("This may affect IGV screenshot generation.")
+
+    # If the bed file was created successfully, proceed with IGV screenshot generation
+    if os.path.exists(bed_file):
+        print(f"Bed file created successfully: {bed_file}")
+        # If the GTF file was specified, use the sorted GTF file for IGV screenshots
+    else:
+        print(f"Warning: Bed file not found: {bed_file}")
+        print("Proceeding without bed file. This may affect IGV screenshot generation.")
+        
     #Plotting Logic
     if not args.manual_plots:
         #If IGV plots are used (default option), creates plots of the transgenes through IGV: the .bed file here is used to direct IGV towards the relevant regions of the genome
