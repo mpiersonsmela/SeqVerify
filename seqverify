@@ -355,28 +355,45 @@ if args.start == "cnv" or args.start == "all":
 if args.start == "plots" or args.start == "all":
     os.system(f'mkdir -p {folder_cnv}')
     try:
-        region_bed(temp_folder,header,commands,marker_list,bed_file) #Creates a bed file to be used as coordinates for the IGV screenshot engine.
-    except NameError: #regenerate commands if the beginning step was skipped
-        commands = commandHandler(genome_source_path,exact_path,temp_folder,genome_with_markers, return_commands_only = True)
-        with open(f'{temp_folder}/{marker_list_file}') as f:
-            marker_list = [i[1:].strip() for i in f if i.startswith('>')]
-        markers = "|".join(marker_list)
-        region_bed(temp_folder,header,commands,marker_list,bed_file)
-    #Plotting Logic
-    if not args.manual_plots:
-        #If IGV plots are used (default option), creates plots of the transgenes through IGV: the .bed file here is used to direct IGV towards the relevant regions of the genome
-        if args.gtf is not None:
-            gtf = new_gtf_sorted #don't put {folder_insertion} at the front
-        igvScreenshot_new(temp_folder,folder_insertion,f'{folder_insertion}/{aligned_diff_chr_bam}',f'{folder_insertion}/{genome_with_markers}',bed_file, gtf_file=gtf)
-    else:
-        #If IGV plots are not used, creates matplotlib plots of the transgene copy numbers: the .bed file here is used to direct samtools depth towards the relevant regions to cut down time.
-        os.system(f'samtools depth -b {bed_file} {folder_insertion}/{aligned_diff_chr_bam} > {temp_folder}/{overall_coverage}')
-        #Creates the histograms (refer to seqver_plots.py for more information)
-        chrHistograms(f'{temp_folder}/{overall_coverage}',marker_list)
-        #Moves the plots and the coverage maps to the main and temp folders, respectively.
-        os.system(f'mv fig_* {folder_insertion}')
-        os.system(f'mv *.cov {temp_folder}')
+        if 'commands' not in locals() or commands is None:
+            raise NameError("commands not defined")
+        if 'marker_list' not in locals() or marker_list is None:
+            raise NameError("marker_list not defined")
+        region_bed(temp_folder, header, commands, marker_list, bed_file)
+    except NameError as e:
+        print(f"Warning: {str(e)}. Attempting to regenerate necessary data.")
+        if exact_path is not None:
+            commands = commandHandler(genome_source_path, exact_path, temp_folder, genome_with_markers, return_commands_only=True)
+        else:
+            commands = []
         
+        if os.path.exists(f'{temp_folder}/{marker_list_file}'):
+            with open(f'{temp_folder}/{marker_list_file}') as f:
+                marker_list = [i[1:].strip() for i in f if i.startswith('>')]
+            markers = "|".join(marker_list)
+        else:
+            print(f"Warning: Marker list file not found: {marker_list_file}")
+            marker_list = []
+            markers = ""
+        
+        region_bed(temp_folder, header, commands, marker_list, bed_file)
+
+    # Plotting Logic
+    if not args.manual_plots:
+        # If IGV plots are used (default option)
+        if args.gtf is not None:
+            gtf = new_gtf_sorted  # don't put {folder_insertion} at the front
+        igvScreenshot_new(temp_folder, folder_insertion, f'{folder_insertion}/{aligned_diff_chr_bam}', f'{folder_insertion}/{genome_with_markers}', bed_file, gtf_file=gtf)
+    else:
+        # If matplotlib plots are used
+        if os.path.exists(f'{folder_insertion}/{aligned_diff_chr_bam}'):
+            os.system(f'samtools depth -b {bed_file} {folder_insertion}/{aligned_diff_chr_bam} > {temp_folder}/{overall_coverage}')
+            chrHistograms(f'{temp_folder}/{overall_coverage}', marker_list)
+            os.system(f'mv fig_* {folder_insertion}')
+            os.system(f'mv *.cov {temp_folder}')
+        else:
+            print(f"Warning: Aligned BAM file not found: {folder_insertion}/{aligned_diff_chr_bam}")
+
     if args.keepgoing:
         print("Finished plots, continuing to Kraken (if enabled)")
         args.start = "kraken"
