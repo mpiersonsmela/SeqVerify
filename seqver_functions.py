@@ -114,35 +114,45 @@ class SamAlignment:
 
 def group(samfile): #returns a dictionary containing all reference transgene chromosomes. each of those then contains another dictionary containing all the chromosomes that got mapped to, and each of those contains a dictionary containing the position of the mappings and how many times they were mapped to it.
     alignments = {}
-    with open(samfile) as sam:
-        for alignment in sam:
-            if alignment.startswith("@"): #skips header lines
-                continue
-            alignment = SamAlignment(alignment) #uses our SamAlignment class for ease of use
-            matches = alignment.allPositions(tag_list=supp_tags) #finds all supplementary alignments in the read
-            ref_chromosome = matches[0][0] #takes name of ref chromosome
-            mates_and_supplementaries = matches[1:] #takes positions of all matches and excludes the original read (we don't care where the read maps to on the original chromosome)
-            try: #dictionary logic
-                chromosome_dict = alignments[ref_chromosome] #initializes chromosome_dict to the reference chromosome entry, if it exists
-                for position in mates_and_supplementaries:
-                    aligned_chrm_name = position[0]
-                    try:
+    try:  # Change: Wrap file operations in a try block
+        with open(samfile) as sam:
+            for alignment in sam:
+                if alignment.startswith("@"): #skips header lines
+                    continue
+                alignment = SamAlignment(alignment) #uses our SamAlignment class for ease of use
+                matches = alignment.allPositions(tag_list=supp_tags) #finds all supplementary alignments in the read
+                ref_chromosome = matches[0][0] #takes name of ref chromosome
+                mates_and_supplementaries = matches[1:] #takes positions of all matches and excludes the original read (we don't care where the read maps to on the original chromosome)
+                try: #dictionary logic
+                    chromosome_dict = alignments[ref_chromosome] #initializes chromosome_dict to the reference chromosome entry, if it exists
+                    for position in mates_and_supplementaries:
+                        aligned_chrm_name = position[0]
                         try:
-                            chromosome_dict[aligned_chrm_name][position[1]] += 1 
+                            try:
+                                chromosome_dict[aligned_chrm_name][position[1]] += 1 
+                            except:
+                                chromosome_dict[aligned_chrm_name][position[1]] = 1 
+                        except KeyError:
+                            chromosome_dict[aligned_chrm_name] = {position[1]:1} 
+                except KeyError:
+                    alignments[ref_chromosome] = {} #if the reference chromosome hasn't been seen yet, creates a new entry
+                    new_chromosomes = list(set([position[0] for position in mates_and_supplementaries])) #adds all the new chromosomes that have reads aligned to the reference chromosome in this alignment
+                    for chromosome in new_chromosomes: #initializes all of them to be empty
+                        alignments[ref_chromosome][chromosome] = {}
+                    for position in mates_and_supplementaries: #if there is no dict for the chromosome the sequence aligns to, it creates one. this for loop is necessary as to not discard the information in that alignment
+                        try:
+                            alignments[ref_chromosome][position[0]][position[1]] += 1 
                         except:
-                            chromosome_dict[aligned_chrm_name][position[1]] = 1 
-                    except KeyError:
-                        chromosome_dict[aligned_chrm_name] = {position[1]:1} 
-            except KeyError:
-                alignments[ref_chromosome] = {} #if the reference chromosome hasn't been seen yet, creates a new entry
-                new_chromosomes = list(set([position[0] for position in mates_and_supplementaries])) #adds all the new chromosomes that have reads aligned to the reference chromosome in this alignment
-                for chromosome in new_chromosomes: #initializes all of them to be empty
-                    alignments[ref_chromosome][chromosome] = {}
-                for position in mates_and_supplementaries: #if there is no dict for the chromosome the sequence aligns to, it creates one. this for loop is necessary as to not discard the information in that alignment
-                    try:
-                        alignments[ref_chromosome][position[0]][position[1]] += 1 
-                    except:
-                        alignments[ref_chromosome][position[0]][position[1]] = 1
+                            alignments[ref_chromosome][position[0]][position[1]] = 1
+    except FileNotFoundError:  # Change: Add error handling for file not found
+        print(f"Error: The SAM file '{samfile}' was not found.")
+        return None
+
+    # Change: Check if any alignments were found
+    if not alignments:
+        print("Warning: No alignments found. This might indicate no mapping to sequences.")
+        return None
+
     for ref_chromosome, aligned in alignments.items():
         for aligned_chromosome, alignment_data in aligned.items():
             for site in alignment_data.keys():
@@ -207,46 +217,58 @@ def filterAndScore(temp_folder,folder_insertion,bam_file,readout_dict,threshold_
     print("reached filtering")
     os.system(f'samtools depth {folder_insertion}/{bam_file} > {temp_folder}/total_coverage.cov')
     total_cov, length = 0,0
-    with open(f"{temp_folder}/total_coverage.cov","r") as cov:
-        for line in cov:
-            depth = line.split("\t")[2]
-            total_cov += int(depth)
-            length += 1
-    read_depth = int(round(total_cov/length, 0))
-    print(f"calculated read depth as {read_depth} from {total_cov} total read lengths over length {length}")
-    editable_readout = deepcopy(readout_dict)
-    spurious_threshold = poisson.ppf(float(1-threshold_probability), read_depth)
-    print(f"spurious threshold is {spurious_threshold}, proceeding to scoring...")
-    with open(f"{temp_folder}/confidence.bed","w+") as bed:
+    try:  # Change: Wrap file operations in a try block
+        with open(f"{temp_folder}/total_coverage.cov","r") as cov:
+            for line in cov:
+                depth = line.split("\t")[2]
+                total_cov += int(depth)
+                length += 1
+        
+        # Change: Add check for zero coverage
+        if length == 0:
+            print("Warning: No coverage found. This might indicate no mapping to sequences.")
+            return readout_dict, readout_dict  # Return original dict to avoid further processing
+
+        read_depth = int(round(total_cov/length, 0))
+        print(f"calculated read depth as {read_depth} from {total_cov} total read lengths over length {length}")
+        editable_readout = deepcopy(readout_dict)
+        spurious_threshold = poisson.ppf(float(1-threshold_probability), read_depth)
+        print(f"spurious threshold is {spurious_threshold}, proceeding to scoring...")
+        with open(f"{temp_folder}/confidence.bed","w+") as bed:
+            for read_chromosome, alignments in readout_dict.items():
+                for alignment_chromosome, sites in alignments.items():
+                    for site, repetitions in sites.items():
+                        repetitions = int(sum(readout_dict[read_chromosome][alignment_chromosome][site])) #repetitions = number of reads (non-chimeric + chimeric) matching that site
+                        bed.write(f"{alignment_chromosome}\t{abs(site)}\t{abs(int(site))+1}\n")
+                        # Change: Use max function to prevent division by zero
+                        likelihood_insertion = poisson.cdf(repetitions,max(1, read_depth//2)) #divides read length by 2 to get haploid depth, use max to avoid division by zero
+                        try:
+                            ratio = likelihood_insertion/(likelihood_insertion+stringency) #TODO: Improve denominator
+                            editable_readout[read_chromosome][alignment_chromosome][site].append(ratio)
+                        except ZeroDivisionError: 
+                            editable_readout[read_chromosome][alignment_chromosome][site].append("inf")
+        print("confidence score calculated, moving to coverage mapping...")
+        os.system(f'samtools depth -b {temp_folder}/confidence.bed {folder_insertion}/{bam_file} > {temp_folder}/confidence.cov')
+        to_delete = []
+        with open(f"{temp_folder}/confidence.cov","r") as cov:
+            for cov_site in cov:
+                fields = cov_site.split("\t")
+                if int(fields[2]) >= spurious_threshold:
+                    to_delete.append((fields[0],fields[1]))
+        print("coverage mapping complete, moving to pruning high-coverage areas...")
         for read_chromosome, alignments in readout_dict.items():
             for alignment_chromosome, sites in alignments.items():
                 for site, repetitions in sites.items():
-                    repetitions = int(sum(readout_dict[read_chromosome][alignment_chromosome][site])) #repetitions = number of reads (non-chimeric + chimeric) matching that site
-                    bed.write(f"{alignment_chromosome}\t{abs(site)}\t{abs(int(site))+1}\n")
-                    likelihood_insertion = poisson.cdf(repetitions,read_depth//2) #divides read length by 2 to get haploid depth #poisson(read_depth//2,repetitions)[1]
-                    try:
-                        ratio = likelihood_insertion/(likelihood_insertion+stringency) #TODO: Improve denominator
-                        editable_readout[read_chromosome][alignment_chromosome][site].append(ratio)
-                    except ZeroDivisionError: 
-                        editable_readout[read_chromosome][alignment_chromosome][site].append("inf")
-    print("confidence score calculated, moving to coverage mapping...")
-    os.system(f'samtools depth -b {temp_folder}/confidence.bed {folder_insertion}/{bam_file} > {temp_folder}/confidence.cov')
-    to_delete = []
-    with open(f"{temp_folder}/confidence.cov","r") as cov:
-        for cov_site in cov:
-            fields = cov_site.split("\t")
-            if int(fields[2]) >= spurious_threshold:
-                to_delete.append((fields[0],fields[1]))
-    print("coverage mapping complete, moving to pruning high-coverage areas...")
-    for read_chromosome, alignments in readout_dict.items():
-        for alignment_chromosome, sites in alignments.items():
-            for site, repetitions in sites.items():
-                current_site = (alignment_chromosome,site)
-                if current_site in to_delete:
-                    print(f"pruning the site aligned to the {alignment_chromosome} untargeted edit and {read_chromosome} on the genome at coordinate {site}")
-                    del editable_readout[read_chromosome][alignment_chromosome][site]
-    print("filtering complete")
-    return [readout_dict,editable_readout]
+                    current_site = (alignment_chromosome,site)
+                    if current_site in to_delete:
+                        print(f"pruning the site aligned to the {alignment_chromosome} untargeted edit and {read_chromosome} on the genome at coordinate {site}")
+                        del editable_readout[read_chromosome][alignment_chromosome][site]
+        print("filtering complete")
+        return [readout_dict,editable_readout]
+    # Change: Add error handling for file not found
+    except FileNotFoundError:
+        print(f"Error: Coverage file not found. This might indicate an issue with samtools depth command.")
+        return readout_dict, readout_dict  # Return original dict if file is not found
 
 def readout(folder,insertion_dict, original_dict, chr_filter, min_matches=1):
     print("reached printing")

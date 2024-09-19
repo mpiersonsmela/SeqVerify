@@ -182,6 +182,13 @@ if args.database is not None:
 
 if args.gtf is not None:
     gtf_file = pathFinder(args.gtf)
+    print(f"GTF file specified: {gtf_file}")
+    if os.path.exists(gtf_file):
+        print(f"GTF file exists at: {gtf_file}")
+    else:
+        print(f"Warning: GTF file not found at: {gtf_file}")
+else:
+    print("No GTF file specified")
     
 os.system(f'mkdir -p {folder}')
 os.system(f'mkdir -p {temp_folder}')    
@@ -220,8 +227,48 @@ if args.start == "beginning" or args.start == "all":
     #Collates all markers/transgenes into a single FASTA file for ease of handling
     
     print("started gtf")
-    if args.gtf is not None and exact_path is not None:
-        gtfEdit(gtf_file, commands, temp_folder, folder_insertion, new_gtf_unsorted, new_gtf_sorted)
+    print("Started GTF processing")
+    if args.gtf is not None:
+        print(f"GTF file specified: {gtf_file}")
+        if os.path.exists(gtf_file):
+            print(f"GTF file exists at: {gtf_file}")
+            if exact_path is not None:
+                print("Exact path is specified. Proceeding with GTF editing.")
+                try:
+                    print(f"Attempting to edit GTF file: {gtf_file}")
+                    print(f"Using commands from: {exact_path}")
+                    print(f"Temporary folder: {temp_folder}")
+                    print(f"Insertion folder: {folder_insertion}")
+                    print(f"Unsorted GTF output: {new_gtf_unsorted}")
+                    print(f"Sorted GTF output: {new_gtf_sorted}")
+                    
+                    success = gtfEdit(gtf_file, commands, temp_folder, folder_insertion, new_gtf_unsorted, new_gtf_sorted)
+                    
+                    if success:
+                        print("GTF editing completed successfully")
+                        print(f"Check for output file: {folder_insertion}/{new_gtf_sorted}")
+                    else:
+                        print("GTF editing failed")
+                except Exception as e:
+                    print(f"Error during GTF editing: {str(e)}")
+                    print("Proceeding without edited GTF file.")
+            else:
+                print("Exact path is not specified (Targeted option is off). Copying GTF file without modifications.")
+                try:
+                    copy_command = f"cp {gtf_file} {folder_insertion}/{new_gtf_sorted}"
+                    os.system(copy_command)
+                    if os.path.exists(f"{folder_insertion}/{new_gtf_sorted}"):
+                        print(f"GTF file copied to: {folder_insertion}/{new_gtf_sorted}")
+                    else:
+                        print(f"Error: Failed to copy GTF file to {folder_insertion}/{new_gtf_sorted}")
+                except Exception as e:
+                    print(f"Error copying GTF file: {str(e)}")
+        else:
+            print(f"Error: GTF file not found at: {gtf_file}")
+    else:
+        print("No GTF file specified. Skipping GTF processing.")
+
+    print("GTF processing complete")
     
     if marker_sources_path is not None:
         if exact_path is None:
