@@ -57,8 +57,8 @@ SeqVerify has the following optional arguments:
    * "markers" (skips to the creation of the insertion site readout), 
    * "cnv" (skips to the CNV analysis),
    * "plots" (skips to the generation of the CNV plots),
-   * "kraken" (skips to the microbial contamination analysis),
-   * "variant" (skips to SNV analysis). 
+   * "kraken" (skips to the microbial contamination analysis).  Note that the ```--kraken``` argument must also be enabled to run this analysis.
+   * "variant" (skips to SNV analysis). Note that the ```--variant_calling``` argument must also be enabled to run variant calling.
 
 This option may be useful for core optimization on clusters: e.g. "beginning" is a single-core operation, "align" is a multi-core operation, so on a job scheduler a user could set a job dependent on the other and only use multiple cores when rquired. It may also be used to avoid having to restart the pipeline from scratch should the hardware or the software fail for any reason, or to perform further analysis on data that SeqVerify has already processed (e.g. add KRAKEN2 analysis when it wasn't initially requested).
 
