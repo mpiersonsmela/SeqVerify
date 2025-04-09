@@ -66,30 +66,37 @@ if args.config is not None:
     args.reads_2 = config["MAIN"]["reads_2"]
     args.untargeted = config["MAIN"]["untargeted"].split(" ")
     args.targeted = config["MAIN"]["targeted"]
-    args.keepgoing = config["MAIN"]["keepgoing"]
-    args.keep_temp = bool(config["MAIN"]["keep_temp"])
+    args.keepgoing = bool(config["MAIN"]["keepgoing"] == "True")
+    args.keep_temp = bool(config["MAIN"]["keep_temp"] == "True")
     args.genome = config["GENOME"]["genome"]
     args.gtf = config["GENOME"]["gtf"]
-    args.kraken = bool(config["KRAKEN2"]["kraken"])
+    args.kraken = bool(config["KRAKEN2"]["kraken"] == "True")
     args.database = config["KRAKEN2"]["database"]
     args.granularity = int(config["INSERTION"]["granularity"])
     args.threads = int(config["INSERTION"]["threads"])
     args.max_mem = config["INSERTION"]["max_mem"]
     args.min_matches = int(config["INSERTION"]["min_matches"])
     args.start = config["INSERTION"]["start"]
-    args.mitochondrial = config["INSERTION"]["mitochondrial"]
+    args.mitochondrial = bool(config["INSERTION"]["mitochondrial"] == "True")
     args.stringency = float(config["INSERTION"]["stringency"])
     args.spurious_filtering_threshold = float(config["INSERTION"]["spurious_filtering_threshold"])
-    args.manual_plots = config["CNV"]["manual_plots"]
+    args.manual_plots = bool(config["CNV"]["manual_plots"] == "True")
     args.bin_size = int(config["CNV"]["bin_size"])
     args.variant_calling = eval(config["VARIANT"]["variant_calling"])
     args.variant_intensity = config["VARIANT"]["variant_intensity"]
     args.variant_window_size = int(config["VARIANT"]["variant_window_size"])
     args.min_quality = int(config["OTHER"]["min_quality"])
 
+
+#Print all arguments to stdout to enable debugging:
+print("Running SeqVerify with arguments:")
+for arg, value in vars(args).items():
+    print(f"{arg}: {value}")
+
+
 if args.download_defaults: #If --download_defaults is set, downloads the three databases and quits the program
     #Note:  These FTP links are likely to change over time and break the command. 
-    #       Please open an issue on GitHub if they do! https://github.com/mpiersonsmela/SeqVerify
+     #       Please open an issue on GitHub if they do! https://github.com/mpiersonsmela/SeqVerify
     os.system('mkdir seqverify_defaults')
 
     #Downloads chm13v2.0 as a reference genome for everything except the variant calling
@@ -330,11 +337,13 @@ if args.start == "plots" or args.start == "all":
         region_bed(temp_folder,header,commands,marker_list,bed_file)
     #Plotting Logic
     if not args.manual_plots:
+        print("Plotting transgenes with igv-reports")
         #If IGV plots are used (default option), creates plots of the transgenes through IGV: the .bed file here is used to direct IGV towards the relevant regions of the genome
         if args.gtf is not None:
             gtf = new_gtf_sorted #don't put {folder_insertion} at the front
         igvScreenshot_new(temp_folder,folder_insertion,f'{folder_insertion}/{aligned_diff_chr_bam}',f'{folder_insertion}/{genome_with_markers}',bed_file, gtf_file=gtf)
     else:
+        print("Plotting insertion site coverage manually")
         #If IGV plots are not used, creates matplotlib plots of the transgene copy numbers: the .bed file here is used to direct samtools depth towards the relevant regions to cut down time.
         os.system(f'samtools depth -b {bed_file} {folder_insertion}/{aligned_diff_chr_bam} > {temp_folder}/{overall_coverage}')
         #Creates the histograms (refer to seqver_plots.py for more information)
