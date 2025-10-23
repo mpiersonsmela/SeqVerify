@@ -66,6 +66,7 @@ if args.config is not None:
     args.reads_2 = config["MAIN"]["reads_2"]
     args.untargeted = config["MAIN"]["untargeted"].split(" ")
     args.targeted = config["MAIN"]["targeted"]
+    if not args.targeted.endswith(".txt"): args.targeted = None #targeted edits file must end with .txt
     args.keepgoing = bool(config["MAIN"]["keepgoing"] == "True")
     args.keep_temp = bool(config["MAIN"]["keep_temp"] == "True")
     args.genome = config["GENOME"]["genome"]
@@ -193,7 +194,7 @@ if args.gtf is not None:
 os.system(f'mkdir -p {folder}')
 os.system(f'mkdir -p {temp_folder}')    
 
-if exact_path is not None:
+if exact_path is not None: #update the genome with commandHandler function and return the commands used
     commands = commandHandler(genome_source_path,exact_path,temp_folder,genome_with_markers,return_commands_only = False)
 
 min_matches = args.min_matches
@@ -242,6 +243,11 @@ if args.start == "beginning" or args.start == "all":
         #Adds the transgenes to the new "collated" FASTA file
         print(f'ADDING TO COLLATED FILE: echo "$(cat {temp_folder}/{marker_list_file})" >> {temp_folder}/{genome_with_markers}') #DEBUG
         os.system(f'echo "$(cat {temp_folder}/{marker_list_file})" >> {temp_folder}/{genome_with_markers}')
+        
+    else: #if there were no untargeted insertions
+        if exact_path is None: #and no targeted insertions
+            #just copy the existing reference genome (wild type)
+            os.system(f'cp {genome_source_path} {temp_folder}/{genome_with_markers}')
 
     #Builds the indices for the genome that has now been augmented with the transgenes, necessary for alignment
     os.system(f'bwa index -b {base_block} {temp_folder}/{genome_with_markers}')
@@ -307,19 +313,12 @@ if args.start == "cnv" or args.start == "all":
     #CNVPytor Logic/Commands, these create a .pytor file for the BAM file and go through all the steps necessary to generate a final plot of the entire genome for ease of CNV analysis
     #Refer to github.com/abyzovlab/CNVpytor/tree/master/cnvpytor for more information
 
-    if exact_path is None: #if there weren't any changes to the default genome
-        os.system(f'cnvpytor -root {folder_cnv}/{pytor} -rd {folder_insertion}/{aligned_diff_chr_bam}')
-        os.system(f'cnvpytor -root {folder_cnv}/{pytor} -his {bin_size}')
-        os.system(f'cnvpytor -root {folder_cnv}/{pytor} -partition {bin_size}')
-        os.system(f'cnvpytor -root {folder_cnv}/{pytor} -call {bin_size} > {folder_cnv}/calls.{bin_size}.tsv')
-        os.system(f'cnvpytor -root {folder_cnv}/{pytor} -plot manhattan {bin_size} -o {folder_cnv}/{output_name}.png')
-    else:
-        genome_configurator(temp_folder,pytor_conf,pytor_gc,genome_with_markers,header)
-        os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder_cnv}/{pytor} -rd {folder_insertion}/{aligned_diff_chr_bam}')
-        os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder_cnv}/{pytor} -his {bin_size}')
-        os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder_cnv}/{pytor} -partition {bin_size}')
-        os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder_cnv}/{pytor} -call {bin_size} > {folder_cnv}/calls.{bin_size}.tsv')
-        os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder_cnv}/{pytor} -plot manhattan {bin_size} -o {folder_cnv}/{output_name}.png')
+    genome_configurator(temp_folder,pytor_conf,pytor_gc,genome_with_markers,header)
+    os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder_cnv}/{pytor} -rd {folder_insertion}/{aligned_diff_chr_bam}')
+    os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder_cnv}/{pytor} -his {bin_size}')
+    os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder_cnv}/{pytor} -partition {bin_size}')
+    os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder_cnv}/{pytor} -call {bin_size} > {folder_cnv}/calls.{bin_size}.tsv')
+    os.system(f'cnvpytor -conf {temp_folder}/{pytor_conf} -root {folder_cnv}/{pytor} -plot manhattan {bin_size} -o {folder_cnv}/{output_name}.png')
 
     if args.keepgoing:
         print("Finished CNVpytor, continuing to plots")
@@ -330,7 +329,10 @@ if args.start == "plots" or args.start == "all":
     try:
         region_bed(temp_folder,header,commands,marker_list,bed_file) #Creates a bed file to be used as coordinates for the IGV screenshot engine.
     except NameError: #regenerate commands if the beginning step was skipped
-        commands = commandHandler(genome_source_path,exact_path,temp_folder,genome_with_markers, return_commands_only = True)
+        if exact_path is not None:
+            commands = commandHandler(genome_source_path,exact_path,temp_folder,genome_with_markers, return_commands_only = True)
+        else:
+            commands = None #if there were no genome-editing commands
         with open(f'{temp_folder}/{marker_list_file}') as f:
             marker_list = [i[1:].strip() for i in f if i.startswith('>')]
         markers = "|".join(marker_list)
@@ -340,7 +342,10 @@ if args.start == "plots" or args.start == "all":
         print("Plotting transgenes with igv-reports")
         #If IGV plots are used (default option), creates plots of the transgenes through IGV: the .bed file here is used to direct IGV towards the relevant regions of the genome
         if args.gtf is not None:
-            gtf = new_gtf_sorted #don't put {folder_insertion} at the front
+            if exact_path is not None:
+                gtf = new_gtf_sorted 
+            else:
+                gtf = args.gtf #if no targeted edits, use the original gtf
         igvScreenshot_new(temp_folder,folder_insertion,f'{folder_insertion}/{aligned_diff_chr_bam}',f'{folder_insertion}/{genome_with_markers}',bed_file, gtf_file=gtf)
     else:
         print("Plotting insertion site coverage manually")
