@@ -21,6 +21,7 @@ parser.add_argument('--untargeted', type=str, required=False, nargs='+') #Name/P
 parser.add_argument('--targeted', type=str, required=False) #Name/Path of command file instructing where to insert known-insertion transgenes
 parser.add_argument('--keepgoing',action='store_const',const=True,required=False,default=False) #continue to next part after completing
 parser.add_argument('--keep_temp', action='store_const',const=True, required=False, default=False) #HIGHLY RECOMMENDED - Option to delete temporary files when the pipeline is done
+parser.add_argument('--use_mem2', action='store_const',const=True, required=False,default=False) #Flag enabling BWA-MEM2 (must be installed). This will require more RAM.
 
 #Genome arguments
 parser.add_argument('--genome', type=str, required=False, default=f"{os.getcwd()}/seqverify_defaults/chm13v2.0.fa") #Name/Path of genome file (CHM13 recommended) used to perform everything but variant calling.
@@ -69,6 +70,7 @@ if args.config is not None:
     if not args.targeted.endswith(".txt"): args.targeted = None #targeted edits file must end with .txt
     args.keepgoing = bool(config["MAIN"]["keepgoing"] == "True")
     args.keep_temp = bool(config["MAIN"]["keep_temp"] == "True")
+    args.use_mem2 = bool(config["MAIN"]["use_mem2"] == "True")
     args.genome = config["GENOME"]["genome"]
     args.gtf = config["GENOME"]["gtf"]
     args.kraken = bool(config["KRAKEN2"]["kraken"] == "True")
@@ -179,11 +181,17 @@ gtf = None
 
 granularity_threshold = args.granularity
 
-if args.untargeted is not None:
+if args.untargeted is not None and args.untargeted != ['']:
+    print("Loading " + str(len(args.untargeted)) + " untargeted insertions:" + str(args.untargeted))
     marker_sources_path = [pathFinder(i) for i in args.untargeted]
+else:
+    print("No untargeted insertions loaded")
 
 if args.targeted is not None:
+    print("Loading targeted insertions:" + args.targeted)
     exact_path = pathFinder(args.targeted)
+else:
+    print("No targeted insertions loaded")
 
 if args.database is not None:
     database = pathFinder(args.database)
@@ -250,7 +258,10 @@ if args.start == "beginning" or args.start == "all":
             os.system(f'cp {genome_source_path} {temp_folder}/{genome_with_markers}')
 
     #Builds the indices for the genome that has now been augmented with the transgenes, necessary for alignment
-    os.system(f'bwa index -b {base_block} {temp_folder}/{genome_with_markers}')
+    if args.use_mem2:
+        os.system(f'bwa-mem2 index {temp_folder}/{genome_with_markers}')
+    else:
+        os.system(f'bwa index -b {base_block} {temp_folder}/{genome_with_markers}')
     os.system(f'cp {temp_folder}/{genome_with_markers} {folder_insertion}/{genome_with_markers}')
     
     if args.keepgoing:
@@ -260,8 +271,11 @@ if args.start == "beginning" or args.start == "all":
 if args.start == "align" or args.start == "all":
     #Beginning of multithreaded part:
 
-    #Aligns the new genome using BWA-MEM
-    os.system(f'bwa mem -M -t {threads} {temp_folder}/{genome_with_markers} {reads_1_path} {reads_2_path} > {temp_folder}/{aligned_with_markers}')
+    #Aligns the new genome using BWA-MEM (or BWA-MEM2)
+    if args.use_mem2:
+        os.system(f'bwa-mem2 mem -M -t {threads} {temp_folder}/{genome_with_markers} {reads_1_path} {reads_2_path} > {temp_folder}/{aligned_with_markers}')
+    else:
+        os.system(f'bwa mem -M -t {threads} {temp_folder}/{genome_with_markers} {reads_1_path} {reads_2_path} > {temp_folder}/{aligned_with_markers}')
     if args.keepgoing:
         print("Finished align, continuing to markers")
         args.start = "markers"
@@ -279,9 +293,9 @@ if args.start == "markers" or args.start == "all":
         if args.mitochondrial:
             markers += "|chrM"
 
-            os.system(f"samtools view -h -@ {threads} {temp_folder}/{aligned_with_markers} |gawk '{{if ((($3 ~ /^({markers})/)&&($7 ~ /chr([0-9]+|[XY])/))||($1 ~ /^@/)) print $0}};' > {temp_folder}/{aligned_diff_chr}")
+            os.system(f"samtools view -h -@ {threads} {temp_folder}/{aligned_with_markers} | awk '{{if ((($3 ~ /^({markers})/)&&($7 ~ /chr([0-9]+|[XY])/))||($1 ~ /^@/)) print $0}};' > {temp_folder}/{aligned_diff_chr}")
         else:
-            os.system(f"samtools view -h -@ {threads} {temp_folder}/{aligned_with_markers} |gawk '{{if ((($3 ~ /^({markers})/)&&($7 ~ /chr([0-9]+|[XYM])/))||($1 ~ /^@/)) print $0}};' > {temp_folder}/{aligned_diff_chr}")
+            os.system(f"samtools view -h -@ {threads} {temp_folder}/{aligned_with_markers} | awk '{{if ((($3 ~ /^({markers})/)&&($7 ~ /chr([0-9]+|[XYM])/))||($1 ~ /^@/)) print $0}};' > {temp_folder}/{aligned_diff_chr}")
 
         #Sorts the previously-aligned SAM file to a BAM file and places it in the main output folder for both potential post-pipeline manual viewing and for later steps in the pipeline itself 
         os.system(f"samtools sort -@ {threads} {temp_folder}/{aligned_with_markers} > {folder_insertion}/{aligned_diff_chr_bam}")
@@ -396,12 +410,18 @@ if args.start == "variant" or args.start == "all":
         #variant_config_path = args.variant_calling[1] #not used. Maybe add as optional argument?
         clinvardb_source_path = pathFinder(args.variant_calling[1]) #example: "seqverify_database/clinvar.vcf.gz" Note, vcf.gz.tbi file must also be present
         
-        #check if BWA index file already exists, if not then create it
-        if os.path.isfile(variant_genome_source_path+".bwt") and os.path.isfile(variant_genome_source_path+".pac") and os.path.isfile(variant_genome_source_path+".sa") and os.path.isfile(variant_genome_source_path+".ann") and os.path.isfile(variant_genome_source_path+".amb"):
-            print("Detected that BWA indexing was already performed. Skipping BWA indexing.")
+        if args.use_mem2:
+            print("Creating BWA-MEM2 index")
+            os.system(f"bwa-mem2 index {variant_genome_source_path}")
         else:
-            print("Existing BWA index not detected. Performing indexing.")
-            os.system(f"bwa index {variant_genome_source_path}")
+            #check if BWA index file already exists, if not then create it
+            if os.path.isfile(variant_genome_source_path+".bwt") and os.path.isfile(variant_genome_source_path+".pac") and os.path.isfile(variant_genome_source_path+".sa") and os.path.isfile(variant_genome_source_path+".ann") and os.path.isfile(variant_genome_source_path+".amb"):
+                print("Detected that BWA indexing was already performed. Skipping BWA indexing.")
+            else:
+                print("Existing BWA index not detected. Performing indexing.")
+                os.system(f"bwa index {variant_genome_source_path}")
+        
+        #index the fasta file
         if os.path.isfile(variant_genome_source_path+".fai"):
             print("Detected that samtools faidx was already performed. Skipping samtools faidx.")
         else:
@@ -409,7 +429,10 @@ if args.start == "variant" or args.start == "all":
             os.system(f"samtools faidx {variant_genome_source_path}")
         
         #realigning the reads to the new genome
-        bwa_cmd = f"bwa mem -M -t {threads} {variant_genome_source_path} {reads_1_path} {reads_2_path} > {temp_folder}/{variant_genome_aligned}"
+        if args.use_mem2:
+            bwa_cmd = f"bwa-mem2 mem -M -t {threads} {variant_genome_source_path} {reads_1_path} {reads_2_path} > {temp_folder}/{variant_genome_aligned}"
+        else:
+            bwa_cmd = f"bwa mem -M -t {threads} {variant_genome_source_path} {reads_1_path} {reads_2_path} > {temp_folder}/{variant_genome_aligned}"
         
         exitcode = os.system(bwa_cmd)
         if exitcode!=0: sys.exit("BWA failed")
