@@ -6,9 +6,6 @@ import sys
 import configparser
 import shutil
 import subprocess
-import io
-import warnings # Added to handle matplotlib warnings
-from contextlib import redirect_stdout
 from collections import OrderedDict
 import matplotlib
 matplotlib.use('Agg')
@@ -32,10 +29,8 @@ except ImportError:
 def run_cnvpytor_analysis(folder_cnv, temp_folder, aligned_bam, genome_fasta, output_name, bin_size, header_file):
     print("Initializing CNVpytor via Python API...")
     
-    # 1. Clear default genomes to prevent resource check crash
-    Genome.reference_genomes = {}
-    
-    # 2. Define Custom Genome from SAM Header
+    # 1. Define Custom Genome
+    # We load chromosomes from the BAM header so CNVpytor knows what to expect.
     chromosomes = OrderedDict()
     with open(header_file, "r") as f:
         for line in f:
@@ -43,68 +38,68 @@ def run_cnvpytor_analysis(folder_cnv, temp_folder, aligned_bam, genome_fasta, ou
                 parts = line.strip().split("\t")
                 name = parts[1].split(":")[1]
                 length = int(parts[2].split(":")[1])
-                if name in ["chrM", "MT", "M"]:
+                # Heuristic for chromosome type
+                if name in ["chrM", "MT", "M", "mitochondrion"]:
                     chromosomes[name] = (length, "M")
                 elif name in ["chrX", "X", "chrY", "Y"]:
                     chromosomes[name] = (length, "S")
                 else:
                     chromosomes[name] = (length, "A")
 
+    # 2. Register Custom Genome in CNVpytor's Global State
+    # We point 'gc_file' to a path we are about to create.
+    # We OMIT 'mask_file' to prevent "missing resource" errors.
     gc_file_path = os.path.join(temp_folder, f"{output_name}_gc.pytor")
-    
-    # Base configuration for custom genome
-    custom_genome_conf = {
-        "name": "custom",
-        "species": "custom",
-        "chromosomes": chromosomes
+    Genome.reference_genomes = {
+        "custom": {
+            "name": "custom",
+            "species": "custom",
+            "chromosomes": chromosomes,
+            "gc_file": gc_file_path
+        }
     }
-
-    # 3. GC Correction Logic (Robust)
-    gc_success = False
-    if not os.path.exists(gc_file_path):
-        print(f"Attempting to generate GC content file: {gc_file_path}")
-        try:
-            # Use a dedicated Root object to generate the GC file
-            app_gc = Root(gc_file_path, create=True, max_cores=1)
-            app_gc.gc(genome_fasta, make_gc_genome_file=True)
-            gc_success = True
-        except Exception as e:
-            print(f"Warning: GC generation failed (proceeding without GC correction): {e}")
-    else:
-        gc_success = True
-
-    if gc_success and os.path.exists(gc_file_path):
-        print("GC file found/created. Enabling GC correction.")
-        custom_genome_conf["gc_file"] = gc_file_path
-    else:
-        print("Skipping GC correction (file missing or generation failed).")
-
-    # Update Global Config
-    Genome.reference_genomes["custom"] = custom_genome_conf
     Genome.detected_genome = "custom"
 
-    # 4. Initialize Root File
+    # 3. Generate GC Content File
+    # We use Root.gc() which corresponds to the '-gc -make_gc_file' CLI command.
+    if not os.path.exists(gc_file_path):
+        print(f"Generating GC content file: {gc_file_path}")
+        try:
+            # We create a temporary Root object just for GC generation
+            app_gc = Root(gc_file_path, create=True, max_cores=1)
+            app_gc.gc(genome_fasta, make_gc_genome_file=True)
+            print("GC file generated successfully.")
+        except Exception as e:
+            print(f"Warning: GC generation failed: {e}")
+            # If GC fails, remove the reference from config so we don't try to use it later
+            if "gc_file" in Genome.reference_genomes["custom"]:
+                del Genome.reference_genomes["custom"]["gc_file"]
+
+    # 4. Initialize Main Root File
     pytor_file = os.path.join(folder_cnv, f"{output_name}.pytor")
     if os.path.exists(pytor_file):
         os.remove(pytor_file)
-        
-    app = Root(pytor_file, create=True)
     
-    # 5. Run Steps
+    app = Root(pytor_file, create=True, max_cores=1)
+    
+    # 5. Read Depth (RD)
     print("Calculating Read Depth...")
     app.rd([aligned_bam], chroms=list(chromosomes.keys()))
     
+    # 6. Histograms & Partition
     print(f"Calculating Histograms (bin={bin_size})...")
     app.calculate_histograms([bin_size])
     
     print("Partitioning...")
     app.partition([bin_size])
     
+    # 7. Call CNVs
     print("Calling CNVs...")
-    # 'call' method returns a dict of calls
+    # call() returns a dict: {bin_size: [list_of_call_lists]}
+    # Each call list is: [type, chrom, start, end, size, cnv, p_val, ...]
     calls_dict = app.call([bin_size])
     
-    # 6. Generate Call TSV
+    # Write calls to TSV
     call_file = os.path.join(folder_cnv, f"calls.{bin_size}.tsv")
     print(f"Writing calls to {call_file}...")
     with open(call_file, "w") as f:
@@ -115,27 +110,19 @@ def run_cnvpytor_analysis(folder_cnv, temp_folder, aligned_bam, genome_fasta, ou
                 # Format call items to string and write tab-separated
                 f.write("\t".join(map(str, call)) + "\n")
     
-    # 7. Generate Plot
+    # 8. Plotting (Manhattan)
     print("Generating Manhattan Plot...")
     try:
-        view = Viewer([pytor_file])
-        
-        # Configure params: disable GC correction if generation failed
-        view.params.update({
+        # We manually update plotting params 
+        view = Viewer([pytor_file], params={
             "bin_size": bin_size,
             "chrom": list(chromosomes.keys()),
-            "rd_use_gc_corr": gc_success, 
+            "rd_use_gc_corr": False, # Use raw read depth to avoid blank plots if GC missing
             "rd_manhattan_call": True 
         })
         
         plt.figure(figsize=(12, 6))
-        
-        # [FIX] Suppress matplotlib warnings caused by CNVpytor re-initializing figures
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=UserWarning, message="Ignoring specified arguments")
-            warnings.filterwarnings("ignore", category=UserWarning, message="FigureCanvasAgg is non-interactive")
-            view.manhattan() 
-            
+        view.manhattan() 
         plot_path = os.path.join(folder_cnv, f"{output_name}.png")
         plt.savefig(plot_path, dpi=300)
         plt.close()
@@ -143,7 +130,7 @@ def run_cnvpytor_analysis(folder_cnv, temp_folder, aligned_bam, genome_fasta, ou
     except Exception as e:
         print(f"Error during plotting: {e}")
 
-# --- MAIN SCRIPT START ---
+# --- MAIN SCRIPT ---
 
 def main():
     parser = argparse.ArgumentParser()
@@ -463,35 +450,12 @@ def main():
                     else:
                         gtf = args.gtf
             igvScreenshot_new(temp_folder,folder_insertion,f'{folder_insertion}/{aligned_diff_chr_bam}',f'{folder_insertion}/{genome_with_markers}',bed_file, gtf_file=gtf)
-        
-        # [FIX] Force manual plotting of ALL chromosomes (including main genome)
-        # This provides a clean "second opinion" plot using raw coverage data
-        # regardless of whether the user asked for it or not, which is helpful for verification.
-        print("Generating Full Genome Coverage Plots (Manual Fallback)...")
-        
-        # 1. Get all chromosome names from the BAM header
-        all_chroms = []
-        with open(f"{temp_folder}/{header}", "r") as f:
-            for line in f:
-                if line.startswith("@SQ"):
-                    # Extract "SN:chr1" -> "chr1"
-                    all_chroms.append(line.split("\t")[1].split(":")[1])
-        
-        # 2. Run coverage calculation for everything
-        # We reuse the 'overall_coverage.cov' file if it was generated, or generate it now
-        cov_file = f'{temp_folder}/{overall_coverage}'
-        # Using a simple 0-based BED for the whole genome is cleaner than region_bed for this purpose
-        # But we can just run depth on the whole BAM without regions
-        os.system(f'samtools depth {folder_insertion}/{aligned_diff_chr_bam} > {cov_file}')
-        
-        # 3. Generate histograms
-        # Note: chrHistograms was originally designed for markers, but works for any chrom
-        # in the list.
-        chrHistograms(cov_file, all_chroms)
-        
-        # 4. Move plots
-        os.system(f'mv fig_* {folder_insertion}')
-        os.system(f'mv *.cov {temp_folder}')
+        else:
+            print("Plotting insertion site coverage manually")
+            os.system(f'samtools depth -b {bed_file} {folder_insertion}/{aligned_diff_chr_bam} > {temp_folder}/{overall_coverage}')
+            chrHistograms(f'{temp_folder}/{overall_coverage}',marker_list)
+            os.system(f'mv fig_* {folder_insertion}')
+            os.system(f'mv *.cov {temp_folder}')
             
         if args.keepgoing:
             print("Finished plots, continuing to Kraken (if enabled)")
