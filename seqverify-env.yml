@@ -8,6 +8,7 @@ dependencies:
   - blast
   - bracken
   - bwa
+  - bwa-mem2
   - cnvpytor
   - htslib
   - idna
@@ -16,10 +17,12 @@ dependencies:
   - kraken2
   - matplotlib
   - numpy
-  - openjdk=11
+  - openjdk=21
   - pip
   - python=3.10
   - samtools
   - scipy
-  - snpeff=5.1
-  - snpsift=4.3.1t
+  - snpeff=5.3
+  - snpsift=5.3
+  - pip:
+    - CrossMap
