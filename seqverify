@@ -47,22 +47,45 @@ except ImportError:
 # Java 21 helpers — bypass conda env's Java 11 for SnpEff/SnpSift
 # ---------------------------------------------------------------------------
 
-_JAVA21 = "/usr/lib/jvm/java-21-openjdk-amd64/bin/java"
-_SNPEFF_JAR = os.path.expanduser(
-    "~/miniconda3/envs/seqverify/share/snpeff-5.3.0a-0/snpEff.jar")
-_SNPSIFT_JAR = os.path.expanduser(
-    "~/miniconda3/envs/seqverify/share/snpsift-5.3.0a-0/SnpSift.jar")
-# Bundled config has the full database registry (GRCh38.mane etc.)
-# The local seqverify_defaults/snpEff.config only has infrastructure settings.
-_SNPEFF_BUNDLED_CONFIG = os.path.expanduser(
-    "~/miniconda3/envs/seqverify/share/snpeff-5.3.0a-0/snpEff.config")
+import glob as _glob
+import sys as _sys
+
+
+def _find_in_env(pattern):
+    """Glob for a file under the active conda environment's share/ directory.
+
+    Uses sys.prefix so it works regardless of where conda is installed, the
+    env name, or the exact package version (e.g. snpeff-5.3.0a-0 vs 5.3.1).
+    Returns the first match, or None if not found.
+    """
+    share = os.path.join(_sys.prefix, 'share')
+    matches = _glob.glob(os.path.join(share, pattern))
+    return matches[0] if matches else None
+
+
+# Java: use the binary that ships with the conda env (pinned to openjdk=21 in
+# seqverify-env.yml). sys.prefix/bin/java is always the env-local Java, so
+# this works on all platforms and install locations.
+_JAVA = os.path.join(_sys.prefix, 'bin', 'java')
+
+# SnpEff / SnpSift JARs: located dynamically under the env's share/ so the
+# code works regardless of the exact package version string in the path.
+_SNPEFF_JAR = _find_in_env('snpeff-*/snpEff.jar')
+_SNPSIFT_JAR = _find_in_env('snpsift-*/SnpSift.jar')
+# Bundled snpEff.config has the full database registry (GRCh38.mane etc.);
+# the local seqverify_defaults/snpEff.config only has infrastructure settings.
+_SNPEFF_BUNDLED_CONFIG = _find_in_env('snpeff-*/snpEff.config')
 
 
 def _java_bin():
-    """Return path to a Java 21+ binary, preferring system install."""
-    if os.path.isfile(_JAVA21):
-        return _JAVA21
-    # Fallback: use whatever 'java' is on PATH (might work if version is right)
+    """Return the Java binary from the active conda environment.
+
+    Because seqverify-env.yml pins openjdk=21, sys.prefix/bin/java is always
+    Java 21 when the seqverify environment is active.  Falls back to the PATH
+    'java' only if the env binary is somehow missing.
+    """
+    if _JAVA and os.path.isfile(_JAVA):
+        return _JAVA
     return "java"
 
 
@@ -231,7 +254,7 @@ def main():
     parser.add_argument('--chain_file', type=str, required=False)
     parser.add_argument('--grch38_fasta', type=str, required=False)
     parser.add_argument('--variant_db', type=str, required=False,
-                        default="GRCh38.105")
+                        default=None)
     parser.add_argument('--loh_window', type=int, required=False,
                         default=1000000)
 
@@ -282,7 +305,8 @@ def main():
         # New keys (optional — use .get() with fallbacks)
         args.chain_file = config["VARIANT"].get("chain_file", None)
         args.grch38_fasta = config["VARIANT"].get("grch38_fasta", None)
-        args.variant_db = config["VARIANT"].get("variant_db", "GRCh38.105")
+        # Empty string in config → None (no SnpEff; correct for non-human genomes)
+        args.variant_db = config["VARIANT"].get("variant_db", None) or None
         args.loh_window = int(config["VARIANT"].get("loh_window", "1000000"))
         args.work_dir = config["MAIN"].get("work_dir", None)
 
@@ -486,9 +510,13 @@ def main():
     # -----------------------------------------------------------------------
     if args.start == "align" or args.start == "all":
         if args.use_mem2:
-            os.system(f'bwa-mem2 mem -M -t {threads} {temp_folder}/{genome_with_markers} {reads_1_path} {reads_2_path} > {temp_folder}/{aligned_with_markers}')
+            bwa_cmd = f'bwa-mem2 mem -M -t {threads} {temp_folder}/{genome_with_markers} {reads_1_path} {reads_2_path} > {temp_folder}/{aligned_with_markers}'
         else:
-            os.system(f'bwa mem -M -t {threads} {temp_folder}/{genome_with_markers} {reads_1_path} {reads_2_path} > {temp_folder}/{aligned_with_markers}')
+            bwa_cmd = f'bwa mem -M -t {threads} {temp_folder}/{genome_with_markers} {reads_1_path} {reads_2_path} > {temp_folder}/{aligned_with_markers}'
+        rc = os.system(bwa_cmd)
+        if rc != 0:
+            sys.exit(f"BWA alignment failed (exit code {rc}). "
+                     f"Check available memory and disk space.")
         if args.keepgoing:
             print("Finished align, continuing to markers")
             args.start = "markers"
@@ -639,39 +667,46 @@ def main():
             args.start = "variant"
 
     # -----------------------------------------------------------------------
-    # variant — call against CHM13 BAM (no re-alignment to GRCh38)
+    # variant — call variants against the CHM13-aligned BAM
+    # Runs whenever variant_calling is not None (even an empty list).
+    # variant_calling=None → skip entirely.
+    # variant_calling=[]   → generate VCF + LOH but no ClinVar annotation.
+    # variant_calling=["clinvar.vcf"] → full pipeline including ClinVar.
     # -----------------------------------------------------------------------
-    if args.start == "variant" or args.start == "all":
+    if (args.start == "variant" or args.start == "all") and \
+            args.variant_calling is not None:
         os.system(f'mkdir -p {folder_snp}')
 
-        if args.variant_calling is not None and args.variant_calling != []:
-            # Call variants using the existing CHM13-aligned BAM
-            chm13_bam = f"{folder_insertion}/{aligned_diff_chr_bam}"
-            edited_genome = f"{temp_folder}/{genome_with_markers}"
+        chm13_bam = f"{folder_insertion}/{aligned_diff_chr_bam}"
+        edited_genome = f"{temp_folder}/{genome_with_markers}"
 
-            # Ensure FASTA index exists for bcftools mpileup
-            if not os.path.isfile(edited_genome + ".fai"):
-                os.system(f"samtools faidx {edited_genome}")
+        if not os.path.isfile(edited_genome + ".fai"):
+            os.system(f"samtools faidx {edited_genome}")
 
-            print("Calling variants against edited CHM13 BAM...")
-            rc = os.system(
-                f"bcftools mpileup -Ou -f {edited_genome} {chm13_bam} | "
-                f"bcftools call -mv -Ov -o {temp_folder}/{variant_vcf}"
-            )
-            if rc != 0:
-                print(f"Warning: bcftools returned code {rc}")
+        print("Calling variants against edited CHM13 BAM...")
+        rc = os.system(
+            f"bcftools mpileup -Ou -f {edited_genome} {chm13_bam} | "
+            f"bcftools call -mv -Ov -o {temp_folder}/{variant_vcf}"
+        )
+        if rc != 0:
+            print(f"Warning: bcftools returned code {rc}")
 
-            if args.keepgoing:
-                args.start = "snp_filtering"
+        if args.keepgoing:
+            args.start = "snp_filtering"
 
     # -----------------------------------------------------------------------
-    # snp_filtering — liftover + annotate + filter + LOH + CNV filter
+    # snp_filtering — coordinate adjustment, optional liftover + annotation,
+    #                 LOH detection, CNV quality filter
+    #
+    # Runs whenever variant_calling is not None.  Each sub-step is
+    # individually conditional so non-human genomes (no ClinVar, no SnpEff
+    # database, no chain file) still produce a VCF, LOH table, and filtered
+    # CNV calls.
     # -----------------------------------------------------------------------
     if (args.start == "snp_filtering" or args.start == "all") and \
-            args.variant_calling is not None and args.variant_calling != []:
+            args.variant_calling is not None:
 
         os.system(f'mkdir -p {folder_snp}')
-        clinvardb_source_path = pathFinder(args.variant_calling[0])
 
         # Ensure commands is defined (when resuming from snp_filtering)
         if 'commands' not in dir() and 'commands' not in locals():
@@ -683,6 +718,7 @@ def main():
                 commands = []
 
         # Step 1: Adjust VCF coords — edited-CHM13 → unedited-CHM13
+        # Always runs; works on any genome.
         print("Step 1: Adjusting VCF coordinates for genomic edits...")
         adjust_vcf_for_edits(
             vcf_in=f"{temp_folder}/{variant_vcf}",
@@ -691,12 +727,13 @@ def main():
             edit_region_out=f"{temp_folder}/{variant_vcf_edit_region}"
         )
 
-        # Step 2: CrossMap liftover CHM13 → GRCh38
-        vcf_for_annotation = f"{temp_folder}/{variant_vcf_adjusted}"
+        # Track the best VCF available for downstream steps.
+        best_vcf = f"{temp_folder}/{variant_vcf_adjusted}"
 
+        # Step 2: CrossMap liftover — only if a chain file is configured.
+        # Skip for non-human genomes; analysis continues in source coordinates.
         if args.chain_file:
             chain_path = pathFinder(args.chain_file)
-            # GRCh38 FASTA for CrossMap allele validation (optional)
             grch38_fa = None
             if args.grch38_fasta:
                 grch38_fa = pathFinder(args.grch38_fasta)
@@ -713,55 +750,75 @@ def main():
                 vcf_out=f"{temp_folder}/{variant_vcf_lifted}",
                 unmapped_out=f"{temp_folder}/seqverify_{output_name}_unmapped.vcf"
             )
-            vcf_for_annotation = f"{temp_folder}/{variant_vcf_lifted}"
+            best_vcf = f"{temp_folder}/{variant_vcf_lifted}"
         else:
-            print("Step 2: No chain_file configured — skipping liftover "
-                  "(annotation will use CHM13 coordinates)")
+            print("Step 2: No chain_file configured — skipping liftover")
 
-        # Step 3: SnpEff annotation
-        # Use the bundled snpEff.config which has the full database registry,
-        # but override -dataDir so database files are read from seqverify_defaults.
-        snpeff_datadir = os.path.abspath("seqverify_defaults")
-        variant_db = getattr(args, 'variant_db', 'GRCh38.mane.1.2.refseq')
-        print(f"Step 3: Annotating with SnpEff ({variant_db})...")
-        run_snpeff(
-            args.max_mem,
-            f"-config {_SNPEFF_BUNDLED_CONFIG} -dataDir {snpeff_datadir} -v {variant_db} "
-            f"{vcf_for_annotation} > {temp_folder}/{variant_vcf_ann}"
-        )
+        # Step 3: SnpEff annotation — only if a database name is configured.
+        # Leave variant_db empty/unset for non-human genomes without a DB.
+        variant_db = getattr(args, 'variant_db', None)
+        snpeff_ran = False
+        if variant_db:
+            snpeff_datadir = os.path.abspath("seqverify_defaults")
+            print(f"Step 3: Annotating with SnpEff ({variant_db})...")
+            run_snpeff(
+                args.max_mem,
+                f"-config {_SNPEFF_BUNDLED_CONFIG} -dataDir {snpeff_datadir} "
+                f"-v {variant_db} {best_vcf} > {temp_folder}/{variant_vcf_ann}"
+            )
+            best_vcf = f"{temp_folder}/{variant_vcf_ann}"
+            snpeff_ran = True
+        else:
+            print("Step 3: No variant_db configured — skipping SnpEff annotation")
 
-        # Step 4: ClinVar annotation with SnpSift
-        print("Step 4: Annotating with ClinVar (SnpSift)...")
-        run_snpsift(
-            args.max_mem,
-            f"annotate -v {clinvardb_source_path} "
-            f"{temp_folder}/{variant_vcf_ann} > {folder_snp}/{variant_vcf_ann}"
-        )
+        # Step 4: ClinVar annotation — only if a ClinVar VCF is provided.
+        # Skip for non-human genomes.
+        clinvar_provided = bool(args.variant_calling)
+        if clinvar_provided:
+            clinvardb_source_path = pathFinder(args.variant_calling[0])
+            print("Step 4: Annotating with ClinVar (SnpSift)...")
+            run_snpsift(
+                args.max_mem,
+                f"annotate -v {clinvardb_source_path} "
+                f"{best_vcf} > {folder_snp}/{variant_vcf_ann}"
+            )
+            best_vcf = f"{folder_snp}/{variant_vcf_ann}"
+        else:
+            print("Step 4: No variant_calling ClinVar VCF — skipping ClinVar annotation")
+            # Copy best VCF into folder_snp so the output path is consistent
+            shutil.copy(best_vcf, f"{folder_snp}/{variant_vcf_ann}")
+            best_vcf = f"{folder_snp}/{variant_vcf_ann}"
 
-        # Step 5: Clinical-grade pathogenicity filtering
-        print("Step 5: Applying pathogenicity filter...")
-        pathogenicity_logger(
-            folder=folder_snp,
-            output_file=variant_lof,
-            vcf_file=variant_vcf_ann,
-            min_quality=args.min_quality,
-            min_intensity=args.variant_intensity,
-            window_size=args.variant_window_size,
-            command_file=exact_path,
-            edit_commands=commands if commands else None
-        )
+        # Step 5: Pathogenicity filtering — requires SnpEff ANN fields.
+        # Silently skipped on non-human genomes (produces empty output gracefully
+        # because the ANN field is absent, but still worth skipping explicitly).
+        if snpeff_ran:
+            print("Step 5: Applying pathogenicity filter...")
+            pathogenicity_logger(
+                folder=folder_snp,
+                output_file=variant_lof,
+                vcf_file=variant_vcf_ann,
+                min_quality=args.min_quality,
+                min_intensity=args.variant_intensity,
+                window_size=args.variant_window_size,
+                command_file=exact_path,
+                edit_commands=commands if commands else None
+            )
+        else:
+            print("Step 5: Skipping pathogenicity filter (requires SnpEff annotation)")
 
-        # Step 6: LOH detection around edit sites
+        # Step 6: LOH detection — always runs; uses only GT/AD fields from
+        # the bcftools VCF, which are present for any genome.
         print("Step 6: Detecting LOH around edit sites...")
         detect_loh_around_edits(
-            vcf_file=f"{folder_snp}/{variant_vcf_ann}",
+            vcf_file=best_vcf,
             edit_commands=commands if commands else None,
             output_file=f"{folder_snp}/{variant_loh}",
             command_file=exact_path,
             window=args.loh_window
         )
 
-        # Step 7: CNV quality filtering
+        # Step 7: CNV quality filtering — always runs; genome-agnostic.
         print("Step 7: Filtering CNV calls...")
         cnv_calls = f"{folder_cnv}/calls.{bin_size}.tsv"
         if os.path.exists(cnv_calls):
