@@ -1,5 +1,14 @@
 #!/usr/bin/env python
- 
+# SeqVerify — Claude branch
+# Changes from seqverify-mem2:
+#   • Java 21 fix: SnpEff/SnpSift called directly via system Java 21 JAR
+#   • Liftover: variant calling against CHM13 BAM (reuses main alignment),
+#     coordinates adjusted for edits, then CrossMap-lifted to GRCh38
+#   • Better variant interpretation: seqver_pathogenicity.pathogenicity_logger()
+#   • CNV filtering: seqver_cnv_filter.filter_cnv_calls()
+#   • LOH detection: seqver_loh.detect_loh_around_edits()
+#   • New config keys: chain_file, grch38_fasta, variant_db, loh_window
+
 import argparse
 import os
 import sys
@@ -11,14 +20,22 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-# Import internal modules
+# Add Claude/ directory to path so imports resolve whether called from parent
+# dir (python Claude/seqverify) or from within Claude/
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+if _script_dir not in sys.path:
+    sys.path.insert(0, _script_dir)
+
 from seqver_functions import *
 from seqver_plots import *
 from seqver_genomeupdate import *
 from seqver_lofFinder import *
 from seqver_gtf import *
+from seqver_liftover import adjust_vcf_for_edits, liftover_vcf
+from seqver_pathogenicity import pathogenicity_logger
+from seqver_cnv_filter import filter_cnv_calls
+from seqver_loh import detect_loh_around_edits
 
-# Import CNVpytor API
 try:
     import cnvpytor
     from cnvpytor import Root, Genome, Viewer
@@ -26,11 +43,82 @@ except ImportError:
     print("Error: cnvpytor module not found. Please ensure it is installed.")
     sys.exit(1)
 
-def run_cnvpytor_analysis(folder_cnv, temp_folder, aligned_bam, genome_fasta, output_name, bin_size, header_file):
+# ---------------------------------------------------------------------------
+# Java 21 helpers — bypass conda env's Java 11 for SnpEff/SnpSift
+# ---------------------------------------------------------------------------
+
+import glob as _glob
+import sys as _sys
+
+
+def _find_in_env(pattern):
+    """Glob for a file under the active conda environment's share/ directory.
+
+    Uses sys.prefix so it works regardless of where conda is installed, the
+    env name, or the exact package version (e.g. snpeff-5.3.0a-0 vs 5.3.1).
+    Returns the first match, or None if not found.
+    """
+    share = os.path.join(_sys.prefix, 'share')
+    matches = _glob.glob(os.path.join(share, pattern))
+    return matches[0] if matches else None
+
+
+# Java: use the binary that ships with the conda env (pinned to openjdk=21 in
+# seqverify-env.yml). sys.prefix/bin/java is always the env-local Java, so
+# this works on all platforms and install locations.
+_JAVA = os.path.join(_sys.prefix, 'bin', 'java')
+
+# SnpEff / SnpSift JARs: located dynamically under the env's share/ so the
+# code works regardless of the exact package version string in the path.
+_SNPEFF_JAR = _find_in_env('snpeff-*/snpEff.jar')
+_SNPSIFT_JAR = _find_in_env('snpsift-*/SnpSift.jar')
+# Bundled snpEff.config has the full database registry (GRCh38.mane etc.);
+# the local seqverify_defaults/snpEff.config only has infrastructure settings.
+_SNPEFF_BUNDLED_CONFIG = _find_in_env('snpeff-*/snpEff.config')
+
+
+def _java_bin():
+    """Return the Java binary from the active conda environment.
+
+    Because seqverify-env.yml pins openjdk=21, sys.prefix/bin/java is always
+    Java 21 when the seqverify environment is active.  Falls back to the PATH
+    'java' only if the env binary is somehow missing.
+    """
+    if _JAVA and os.path.isfile(_JAVA):
+        return _JAVA
+    return "java"
+
+
+def run_snpeff(max_mem, args_str):
+    """Call SnpEff JAR directly with Java 21."""
+    java = _java_bin()
+    cmd = f"{java} -Xmx{max_mem} -jar {_SNPEFF_JAR} {args_str}"
+    print(f"[SnpEff] {cmd}")
+    rc = os.system(cmd)
+    if rc != 0:
+        print(f"Warning: SnpEff exited with code {rc}")
+    return rc
+
+
+def run_snpsift(max_mem, args_str):
+    """Call SnpSift JAR directly with Java 21."""
+    java = _java_bin()
+    cmd = f"{java} -Xmx{max_mem} -jar {_SNPSIFT_JAR} {args_str}"
+    print(f"[SnpSift] {cmd}")
+    rc = os.system(cmd)
+    if rc != 0:
+        print(f"Warning: SnpSift exited with code {rc}")
+    return rc
+
+
+# ---------------------------------------------------------------------------
+# CNVpytor (unchanged from seqverify-mem2)
+# ---------------------------------------------------------------------------
+
+def run_cnvpytor_analysis(folder_cnv, temp_folder, aligned_bam, genome_fasta,
+                          output_name, bin_size, header_file):
     print("Initializing CNVpytor via Python API...")
-    
-    # 1. Define Custom Genome
-    # We load chromosomes from the BAM header so CNVpytor knows what to expect.
+
     chromosomes = OrderedDict()
     with open(header_file, "r") as f:
         for line in f:
@@ -38,7 +126,6 @@ def run_cnvpytor_analysis(folder_cnv, temp_folder, aligned_bam, genome_fasta, ou
                 parts = line.strip().split("\t")
                 name = parts[1].split(":")[1]
                 length = int(parts[2].split(":")[1])
-                # Heuristic for chromosome type
                 if name in ["chrM", "MT", "M", "mitochondrion"]:
                     chromosomes[name] = (length, "M")
                 elif name in ["chrX", "X", "chrY", "Y"]:
@@ -46,9 +133,6 @@ def run_cnvpytor_analysis(folder_cnv, temp_folder, aligned_bam, genome_fasta, ou
                 else:
                     chromosomes[name] = (length, "A")
 
-    # 2. Register Custom Genome in CNVpytor's Global State
-    # We point 'gc_file' to a path we are about to create.
-    # We OMIT 'mask_file' to prevent "missing resource" errors.
     gc_file_path = os.path.join(temp_folder, f"{output_name}_gc.pytor")
     Genome.reference_genomes = {
         "custom": {
@@ -60,69 +144,53 @@ def run_cnvpytor_analysis(folder_cnv, temp_folder, aligned_bam, genome_fasta, ou
     }
     Genome.detected_genome = "custom"
 
-    # 3. Generate GC Content File
-    # We use Root.gc() which corresponds to the '-gc -make_gc_file' CLI command.
     if not os.path.exists(gc_file_path):
         print(f"Generating GC content file: {gc_file_path}")
         try:
-            # We create a temporary Root object just for GC generation
             app_gc = Root(gc_file_path, create=True, max_cores=1)
             app_gc.gc(genome_fasta, make_gc_genome_file=True)
             print("GC file generated successfully.")
         except Exception as e:
             print(f"Warning: GC generation failed: {e}")
-            # If GC fails, remove the reference from config so we don't try to use it later
             if "gc_file" in Genome.reference_genomes["custom"]:
                 del Genome.reference_genomes["custom"]["gc_file"]
 
-    # 4. Initialize Main Root File
     pytor_file = os.path.join(folder_cnv, f"{output_name}.pytor")
     if os.path.exists(pytor_file):
         os.remove(pytor_file)
-    
+
     app = Root(pytor_file, create=True, max_cores=1)
-    
-    # 5. Read Depth (RD)
+
     print("Calculating Read Depth...")
     app.rd([aligned_bam], chroms=list(chromosomes.keys()))
-    
-    # 6. Histograms & Partition
+
     print(f"Calculating Histograms (bin={bin_size})...")
     app.calculate_histograms([bin_size])
-    
+
     print("Partitioning...")
     app.partition([bin_size])
-    
-    # 7. Call CNVs
+
     print("Calling CNVs...")
-    # call() returns a dict: {bin_size: [list_of_call_lists]}
-    # Each call list is: [type, chrom, start, end, size, cnv, p_val, ...]
     calls_dict = app.call([bin_size])
-    
-    # Write calls to TSV
+
     call_file = os.path.join(folder_cnv, f"calls.{bin_size}.tsv")
     print(f"Writing calls to {call_file}...")
     with open(call_file, "w") as f:
-        # Header matching CNVpytor output format
         f.write("type\tchrom\tstart\tend\tsize\tcnv\tp_val\tp_val_2\tp_val_3\tp_val_4\tQ0\tpN\tdG\n")
         if bin_size in calls_dict:
             for call in calls_dict[bin_size]:
-                # Format call items to string and write tab-separated
                 f.write("\t".join(map(str, call)) + "\n")
-    
-    # 8. Plotting (Manhattan)
+
     print("Generating Manhattan Plot...")
     try:
-        # We manually update plotting params 
         view = Viewer([pytor_file], params={
             "bin_size": bin_size,
             "chrom": list(chromosomes.keys()),
-            "rd_use_gc_corr": False, # Use raw read depth to avoid blank plots if GC missing
-            "rd_manhattan_call": True 
+            "rd_use_gc_corr": False,
+            "rd_manhattan_call": True
         })
-        
         plt.figure(figsize=(12, 6))
-        view.manhattan() 
+        view.manhattan()
         plot_path = os.path.join(folder_cnv, f"{output_name}.png")
         plt.savefig(plot_path, dpi=300)
         plt.close()
@@ -130,45 +198,74 @@ def run_cnvpytor_analysis(folder_cnv, temp_folder, aligned_bam, genome_fasta, ou
     except Exception as e:
         print(f"Error during plotting: {e}")
 
-# --- MAIN SCRIPT ---
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--output', type=str, required=False, default="output") 
-    parser.add_argument('--reads_1', type=str, required=False) 
-    parser.add_argument('--reads_2', type=str, required=False) 
-    parser.add_argument('--untargeted', type=str, required=False, nargs='+') 
-    parser.add_argument('--targeted', type=str, required=False) 
-    parser.add_argument('--keepgoing',action='store_const',const=True,required=False,default=False) 
-    parser.add_argument('--keep_temp', action='store_const',const=True, required=False, default=False) 
-    parser.add_argument('--use_mem2', action='store_const',const=True, required=False,default=False) 
+    parser.add_argument('--output', type=str, required=False, default="output")
+    parser.add_argument('--reads_1', type=str, required=False)
+    parser.add_argument('--reads_2', type=str, required=False)
+    parser.add_argument('--untargeted', type=str, required=False, nargs='+')
+    parser.add_argument('--targeted', type=str, required=False)
+    parser.add_argument('--keepgoing', action='store_const', const=True,
+                        required=False, default=False)
+    parser.add_argument('--keep_temp', action='store_const', const=True,
+                        required=False, default=False)
+    parser.add_argument('--use_mem2', action='store_const', const=True,
+                        required=False, default=False)
 
-    parser.add_argument('--genome', type=str, required=False, default=f"{os.getcwd()}/seqverify_defaults/chm13v2.0.fa") 
-    parser.add_argument('--gtf', type=str, required=False, default=f"{os.getcwd()}/seqverify_defaults/chm13v2.0_RefSeq_Liftoff_v5.1.gff3") 
+    parser.add_argument('--genome', type=str, required=False,
+                        default=f"{os.getcwd()}/seqverify_defaults/chm13v2.0.fa")
+    parser.add_argument('--gtf', type=str, required=False,
+                        default=f"{os.getcwd()}/seqverify_defaults/chm13v2.0_RefSeq_Liftoff_v5.1.gff3")
 
-    parser.add_argument('--kraken', action='store_const',const=True, required=False,default=False) 
-    parser.add_argument('--database',type=str,required=False, default=f"{os.getcwd()}/seqverify_defaults/seqverify_database") 
+    parser.add_argument('--kraken', action='store_const', const=True,
+                        required=False, default=False)
+    parser.add_argument('--database', type=str, required=False,
+                        default=f"{os.getcwd()}/seqverify_defaults/seqverify_database")
 
-    parser.add_argument('--granularity',type=int, required=False, default=500) 
-    parser.add_argument('--threads',type=int,required=False, default=1) 
-    parser.add_argument('--max_mem', type=str, required=False, default='16G') 
-    parser.add_argument('--min_matches', type=int, required=False,default=1) 
-    parser.add_argument('--start', type=str, required=False, default="all") 
-    parser.add_argument('--mitochondrial',action='store_const',const=True,required=False,default=False) 
-    parser.add_argument('--stringency',type=float, required=False, default=0.005) 
-    parser.add_argument('--spurious_filtering_threshold', type=float, required=False, default=0.00001)
+    parser.add_argument('--granularity', type=int, required=False, default=500)
+    parser.add_argument('--threads', type=int, required=False, default=1)
+    parser.add_argument('--max_mem', type=str, required=False, default='16G')
+    parser.add_argument('--min_matches', type=int, required=False, default=1)
+    parser.add_argument('--start', type=str, required=False, default="all")
+    parser.add_argument('--mitochondrial', action='store_const', const=True,
+                        required=False, default=False)
+    parser.add_argument('--stringency', type=float, required=False, default=0.005)
+    parser.add_argument('--spurious_filtering_threshold', type=float,
+                        required=False, default=0.00001)
 
-    parser.add_argument('--manual_plots',action='store_const',const=True,required=False,default=False) 
-    parser.add_argument('--bin_size',type=int, required=False, default=100000) 
+    parser.add_argument('--manual_plots', action='store_const', const=True,
+                        required=False, default=False)
+    parser.add_argument('--bin_size', type=int, required=False, default=100000)
 
-    parser.add_argument('--variant_calling',nargs=2,type=str,required=False) 
-    parser.add_argument('--variant_intensity',type=str,required=False,default="MODERATE") 
-    parser.add_argument('--variant_window_size',type=int,required=False,default=10000) 
+    # Variant calling — now takes 1 arg (ClinVar VCF path only)
+    # The genome to call against is the CHM13 BAM from the main alignment
+    parser.add_argument('--variant_calling', nargs=1, type=str, required=False)
+    parser.add_argument('--variant_intensity', type=str, required=False,
+                        default="MODERATE")
+    parser.add_argument('--variant_window_size', type=int, required=False,
+                        default=10000)
 
-    parser.add_argument('--download_defaults',action='store_const',const=True,required=False,default=False) 
-    parser.add_argument('--similarity',nargs=2,type=str,required=False) 
-    parser.add_argument('--min_quality',type=int,required=False,default=3) 
-    parser.add_argument('--config',type=str,required=False,default=None)
+    # New: liftover chain file and GRCh38 FASTA for CrossMap allele validation
+    parser.add_argument('--chain_file', type=str, required=False)
+    parser.add_argument('--grch38_fasta', type=str, required=False)
+    parser.add_argument('--variant_db', type=str, required=False,
+                        default=None)
+    parser.add_argument('--loh_window', type=int, required=False,
+                        default=1000000)
+
+    parser.add_argument('--download_defaults', action='store_const', const=True,
+                        required=False, default=False)
+    parser.add_argument('--similarity', nargs=2, type=str, required=False)
+    parser.add_argument('--min_quality', type=int, required=False, default=3)
+    parser.add_argument('--config', type=str, required=False, default=None)
+    # work_dir: all output folders are created relative to this directory.
+    # Input file paths are converted to absolute before changing directory.
+    parser.add_argument('--work_dir', type=str, required=False, default=None)
 
     args = parser.parse_args()
 
@@ -180,7 +277,8 @@ def main():
         args.reads_2 = config["MAIN"]["reads_2"]
         args.untargeted = config["MAIN"]["untargeted"].split(" ")
         args.targeted = config["MAIN"]["targeted"]
-        if not args.targeted.endswith(".txt"): args.targeted = None 
+        if not args.targeted.endswith(".txt"):
+            args.targeted = None
         args.keepgoing = bool(config["MAIN"]["keepgoing"] == "True")
         args.keep_temp = bool(config["MAIN"]["keep_temp"] == "True")
         args.use_mem2 = bool(config["MAIN"]["use_mem2"] == "True")
@@ -195,38 +293,82 @@ def main():
         args.start = config["INSERTION"]["start"]
         args.mitochondrial = bool(config["INSERTION"]["mitochondrial"] == "True")
         args.stringency = float(config["INSERTION"]["stringency"])
-        args.spurious_filtering_threshold = float(config["INSERTION"]["spurious_filtering_threshold"])
+        args.spurious_filtering_threshold = float(
+            config["INSERTION"]["spurious_filtering_threshold"])
         args.manual_plots = bool(config["CNV"]["manual_plots"] == "True")
         args.bin_size = int(config["CNV"]["bin_size"])
+        # variant_calling is now a 1-element list: ["path/to/clinvar.vcf"]
         args.variant_calling = eval(config["VARIANT"]["variant_calling"])
         args.variant_intensity = config["VARIANT"]["variant_intensity"]
         args.variant_window_size = int(config["VARIANT"]["variant_window_size"])
         args.min_quality = int(config["OTHER"]["min_quality"])
+        # New keys (optional — use .get() with fallbacks)
+        args.chain_file = config["VARIANT"].get("chain_file", None)
+        args.grch38_fasta = config["VARIANT"].get("grch38_fasta", None)
+        # Empty string in config → None (no SnpEff; correct for non-human genomes)
+        args.variant_db = config["VARIANT"].get("variant_db", None) or None
+        args.loh_window = int(config["VARIANT"].get("loh_window", "1000000"))
+        args.work_dir = config["MAIN"].get("work_dir", None)
 
-    print("Running SeqVerify with arguments:")
+    # -----------------------------------------------------------------------
+    # work_dir: change CWD so all output paths resolve inside it.
+    # Convert every relative input path to absolute BEFORE chdir.
+    # -----------------------------------------------------------------------
+    if getattr(args, 'work_dir', None):
+        _cwd = os.getcwd()
+        def _abs(p):
+            return os.path.join(_cwd, p) if p and not os.path.isabs(p) else (p or None)
+        args.reads_1 = _abs(args.reads_1)
+        args.reads_2 = _abs(args.reads_2)
+        args.genome = _abs(args.genome)
+        args.gtf = _abs(args.gtf)
+        args.targeted = _abs(args.targeted)
+        args.database = _abs(args.database)
+        args.chain_file = _abs(args.chain_file)
+        args.grch38_fasta = _abs(args.grch38_fasta)
+        if args.untargeted:
+            args.untargeted = [_abs(u) for u in args.untargeted if u]
+        if args.variant_calling:
+            args.variant_calling = [_abs(v) for v in args.variant_calling if v]
+        _work_dir = os.path.abspath(args.work_dir)
+        os.makedirs(_work_dir, exist_ok=True)
+        os.chdir(_work_dir)
+        print(f"Working directory set to: {_work_dir}")
+
+    print("Running SeqVerify (Claude branch) with arguments:")
     for arg, value in vars(args).items():
-        print(f"{arg}: {value}")
+        print(f"  {arg}: {value}")
 
-    if args.download_defaults: 
-        os.system('mkdir seqverify_defaults')
+    # -----------------------------------------------------------------------
+    # --download_defaults: fetch reference files including chain file
+    # -----------------------------------------------------------------------
+    if args.download_defaults:
+        os.system('mkdir -p seqverify_defaults')
         os.system('curl -OJX GET "https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/analysis_set/chm13v2.0.fa.gz" --output-dir seqverify_defaults')
         os.system('gunzip seqverify_defaults/chm13v2.0.fa.gz')
         os.system('curl -OJX GET "https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/annotation/chm13v2.0_RefSeq_Liftoff_v5.1.gff3.gz" --output-dir seqverify_defaults')
         os.system('gunzip seqverify_defaults/chm13v2.0_RefSeq_Liftoff_v5.1.gff3.gz')
-        os.system('curl -OJX GET "ftp://ftp.ensembl.org/pub/release-105/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz" --output-dir seqverify_defaults')
+        os.system('curl -L -o seqverify_defaults/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz "ftp://ftp.ensembl.org/pub/release-105/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"')
         os.system('gunzip seqverify_defaults/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz')
-        os.system('mkdir seqverify_defaults/seqverify_database')
+        os.system('mkdir -p seqverify_defaults/seqverify_database')
         os.system('curl -OJX GET "https://genome-idx.s3.amazonaws.com/kraken/k2_pluspf_08gb_20230605.tar.gz" --output-dir seqverify_defaults')
         os.system('tar -xzf seqverify_defaults/k2_pluspf_08gb_20230605.tar.gz -C seqverify_defaults/seqverify_database')
         os.system('curl -OJX GET "https://raw.githubusercontent.com/pcingola/SnpEff/master/config/snpEff.config" --output-dir seqverify_defaults')
         os.system('curl -OJX GET "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz" --output-dir seqverify_defaults')
         os.system('curl -OJX GET "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz.tbi" --output-dir seqverify_defaults')
         os.system('gunzip seqverify_defaults/clinvar.vcf.gz')
+        # Chain file: CHM13v2.0 (hs1) → hg38 from UCSC
+        print("Downloading CHM13v2.0 → hg38 chain file...")
+        os.system('curl -L -o seqverify_defaults/chm13v2.0ToHg38.over.chain.gz '
+                  '"https://hgdownload.soe.ucsc.edu/goldenPath/hs1/liftOver/hs1ToHg38.over.chain.gz"')
         sys.exit(0)
 
+    # -----------------------------------------------------------------------
+    # Path setup
+    # -----------------------------------------------------------------------
     output_name = args.output
     folder = f"{output_name}_seqverify"
-    temp_folder =f"{output_name}_seqverify_temp"
+    temp_folder = f"{output_name}_seqverify_temp"
     marker_list_file = f"seqverify_{output_name}_transgene_list.fa"
     genome_with_markers = f"seqverify_{output_name}_genome_with_markers.fa"
     aligned_with_markers = f"seqverify_{output_name}_markers.sam"
@@ -238,11 +380,16 @@ def main():
     unaligned = f"seqverify_{output_name}_unaligned.sam"
     unaligned_R1 = f"seqverify_{output_name}_unaligned_R1.fastq"
     unaligned_R2 = f"seqverify_{output_name}_unaligned_R2.fastq"
-    variant_genome_aligned = f"seqverify_{output_name}_variant.sam"
-    variant_genome_aligned_bam = f"seqverify_{output_name}_variant.bam"
-    variant_vcf = f"seqverify_{output_name}.vcf"
-    variant_vcf_ann = f"seqverify_{output_name}.ann.vcf"
+
+    # Variant calling file names (liftover pipeline)
+    variant_vcf = f"seqverify_{output_name}.vcf"              # CHM13 calls
+    variant_vcf_adjusted = f"seqverify_{output_name}_adjusted.vcf"   # coord-adjusted
+    variant_vcf_edit_region = f"seqverify_{output_name}_edit_region.vcf"
+    variant_vcf_lifted = f"seqverify_{output_name}_lifted.vcf"        # GRCh38
+    variant_vcf_ann = f"seqverify_{output_name}.ann.vcf"              # SnpEff
     variant_lof = f"seqverify_{output_name}_variants.tsv"
+    variant_loh = f"seqverify_{output_name}_loh.tsv"
+
     bed_file = f"{output_name}.bed"
     vcf_similarity = f"seqverify_{output_name}_bcfstats.txt"
     vcf_isec = f"seqverify_{output_name}_unique.vcf"
@@ -252,10 +399,11 @@ def main():
     folder_insertion = f"{folder}/insertion"
     folder_cnv = f"{folder}/copy_number"
     folder_kraken = f"{folder}/kraken"
-    folder_snp =f"{folder}/variant_calling"
+    folder_snp = f"{folder}/variant_calling"
 
     if args.similarity is not None:
-        compare(args.similarity[0],args.similarity[1],args.min_quality,temp_folder,folder,vcf_similarity, vcf_isec)
+        compare(args.similarity[0], args.similarity[1], args.min_quality,
+                temp_folder, folder, vcf_similarity, vcf_isec)
         sys.exit(0)
 
     reads_1_path = pathFinder(args.reads_1)
@@ -269,7 +417,8 @@ def main():
     granularity_threshold = args.granularity
 
     if args.untargeted is not None and args.untargeted != ['']:
-        print("Loading " + str(len(args.untargeted)) + " untargeted insertions:" + str(args.untargeted))
+        print("Loading " + str(len(args.untargeted)) + " untargeted insertions:" +
+              str(args.untargeted))
         marker_sources_path = [pathFinder(i) for i in args.untargeted]
     else:
         print("No untargeted insertions loaded")
@@ -278,18 +427,23 @@ def main():
         print("Loading targeted insertions:" + args.targeted)
         exact_path = pathFinder(args.targeted)
     else:
-        print("No targeted insertions loaded")
+        print("No targeted insertions loaded — running in wild-type mode")
 
     if args.database is not None:
         database = pathFinder(args.database)
     if args.gtf is not None:
         gtf_file = pathFinder(args.gtf)
-        
+
     os.system(f'mkdir -p {folder}')
-    os.system(f'mkdir -p {temp_folder}')    
+    os.system(f'mkdir -p {temp_folder}')
 
     if exact_path is not None:
-        commands = commandHandler(genome_source_path,exact_path,temp_folder,genome_with_markers,return_commands_only = False)
+        # Load edit commands only — genome file creation stays in beginning stage
+        # so resuming from variant/snp_filtering doesn't try to write genome files.
+        commands = commandHandler(genome_source_path, exact_path, temp_folder,
+                                  genome_with_markers, return_commands_only=True)
+    else:
+        commands = []  # wild-type: no edits
 
     min_matches = args.min_matches
     bin_size = args.bin_size
@@ -302,32 +456,40 @@ def main():
             raise ValueError("Custom bin size not divisible by 100")
 
     if args.max_mem[-1] == "M":
-        max_mem = int(args.max_mem[:-1])*1000000
+        max_mem = int(args.max_mem[:-1]) * 1000000
     elif args.max_mem[-1] == "G":
-        max_mem = int(args.max_mem[:-1])*1000000000
-    elif type(args.max_mem) == 'int':
+        max_mem = int(args.max_mem[:-1]) * 1000000000
+    else:
         max_mem = int(args.max_mem)
 
     base_block = max_mem / 8
-    os.environ['_JAVA_OPTIONS'] = '-Xmx'+args.max_mem
+    os.environ['_JAVA_OPTIONS'] = '-Xmx' + args.max_mem
 
+    # -----------------------------------------------------------------------
+    # beginning
+    # -----------------------------------------------------------------------
     if args.start == "beginning" or args.start == "all":
         os.system(f'mkdir -p {folder_insertion}')
         print("started gtf")
         if args.gtf is not None and exact_path is not None:
-            gtfEdit(gtf_file, commands, temp_folder, folder_insertion, new_gtf_unsorted, new_gtf_sorted)
-        
+            gtfEdit(gtf_file, commands, temp_folder, folder_insertion,
+                    new_gtf_unsorted, new_gtf_sorted)
+
         if os.path.exists(f'{temp_folder}/{marker_list_file}'):
             os.remove(f'{temp_folder}/{marker_list_file}')
         os.system(f'touch {temp_folder}/{marker_list_file}')
 
-        if exact_path is None:
+        if exact_path is not None:
+            # Create the edited genome (edits applied here, not at script top)
+            commandHandler(genome_source_path, exact_path, temp_folder,
+                           genome_with_markers, return_commands_only=False)
+        else:
             os.system(f'cp {genome_source_path} {temp_folder}/{genome_with_markers}')
 
         if marker_sources_path is not None:
-            for file in marker_sources_path: 
+            for file in marker_sources_path:
                 print(f'Reading marker file: {file}')
-                os.system(f'cat {file} >> {temp_folder}/{marker_list_file}') 
+                os.system(f'cat {file} >> {temp_folder}/{marker_list_file}')
 
             print(f'Appending markers to genome...')
             os.system(f'echo "" >> {temp_folder}/{genome_with_markers}')
@@ -338,23 +500,33 @@ def main():
         else:
             os.system(f'bwa index -b {base_block} {temp_folder}/{genome_with_markers}')
         os.system(f'cp {temp_folder}/{genome_with_markers} {folder_insertion}/{genome_with_markers}')
-        
+
         if args.keepgoing:
             print("Finished beginning, continuing to align")
             args.start = "align"
 
+    # -----------------------------------------------------------------------
+    # align
+    # -----------------------------------------------------------------------
     if args.start == "align" or args.start == "all":
         if args.use_mem2:
-            os.system(f'bwa-mem2 mem -M -t {threads} {temp_folder}/{genome_with_markers} {reads_1_path} {reads_2_path} > {temp_folder}/{aligned_with_markers}')
+            bwa_cmd = f'bwa-mem2 mem -M -t {threads} {temp_folder}/{genome_with_markers} {reads_1_path} {reads_2_path} > {temp_folder}/{aligned_with_markers}'
         else:
-            os.system(f'bwa mem -M -t {threads} {temp_folder}/{genome_with_markers} {reads_1_path} {reads_2_path} > {temp_folder}/{aligned_with_markers}')
+            bwa_cmd = f'bwa mem -M -t {threads} {temp_folder}/{genome_with_markers} {reads_1_path} {reads_2_path} > {temp_folder}/{aligned_with_markers}'
+        rc = os.system(bwa_cmd)
+        if rc != 0:
+            sys.exit(f"BWA alignment failed (exit code {rc}). "
+                     f"Check available memory and disk space.")
         if args.keepgoing:
             print("Finished align, continuing to markers")
             args.start = "markers"
-        
+
+    # -----------------------------------------------------------------------
+    # markers
+    # -----------------------------------------------------------------------
     if args.start == "markers" or args.start == "all":
         os.system(f'mkdir -p {folder_insertion}')
-        
+
         has_markers = False
         if os.path.exists(f'{temp_folder}/{marker_list_file}'):
             with open(f'{temp_folder}/{marker_list_file}') as f:
@@ -362,7 +534,7 @@ def main():
                 if marker_list:
                     has_markers = True
                     markers = "|".join(marker_list)
-        
+
         if has_markers:
             if args.mitochondrial:
                 markers += "|chrM"
@@ -372,37 +544,47 @@ def main():
         else:
             os.system(f'samtools view -H {temp_folder}/{aligned_with_markers} > {temp_folder}/{aligned_diff_chr}')
 
+        # Sort full alignment — this BAM is reused for CNVpytor AND variant calling
         os.system(f"samtools sort -@ {threads} {temp_folder}/{aligned_with_markers} > {folder_insertion}/{aligned_diff_chr_bam}")
         os.system(f"samtools index -@ {threads} {folder_insertion}/{aligned_diff_chr_bam}")
         os.system(f'samtools view -@ {threads} -H {folder_insertion}/{aligned_diff_chr_bam} > {temp_folder}/{header}')
-        
+
         if args.keepgoing:
             print("Finished markers, continuing to readout")
             args.start = "readout"
-            
+
+    # -----------------------------------------------------------------------
+    # readout
+    # -----------------------------------------------------------------------
     if args.start == "readout" or args.start == "all":
         marker_list = []
         if os.path.exists(f'{temp_folder}/{marker_list_file}'):
             with open(f'{temp_folder}/{marker_list_file}') as f:
                 marker_list = [i[1:].strip() for i in f if i.startswith('>')]
-        
+
         data = group(f'{temp_folder}/{aligned_diff_chr}')
-        insertions = compress(data,granularity_threshold)
+        insertions = compress(data, granularity_threshold)
 
         if insertions and len(insertions) > 0:
-            filteredInsertions = filterAndScore(temp_folder,folder_insertion,aligned_diff_chr_bam,insertions,args.spurious_filtering_threshold,args.stringency)
-            readout(folder_insertion,filteredInsertions[1],filteredInsertions[0],marker_list,min_matches)
+            filteredInsertions = filterAndScore(
+                temp_folder, folder_insertion, aligned_diff_chr_bam,
+                insertions, args.spurious_filtering_threshold, args.stringency)
+            readout(folder_insertion, filteredInsertions[1],
+                    filteredInsertions[0], marker_list, min_matches)
         else:
             print("No insertions found, skipping filtering/scoring.")
             readout(folder_insertion, {}, {}, marker_list, min_matches)
-        
+
         if args.keepgoing:
             print("Finished markers, continuing to CNV")
             args.start = "cnv"
 
+    # -----------------------------------------------------------------------
+    # cnv
+    # -----------------------------------------------------------------------
     if args.start == "cnv" or args.start == "all":
         os.system(f'mkdir -p {folder_cnv}')
-        
+
         run_cnvpytor_analysis(
             folder_cnv=folder_cnv,
             temp_folder=temp_folder,
@@ -417,9 +599,12 @@ def main():
             print("Finished CNVpytor, continuing to plots")
             args.start = "plots"
 
+    # -----------------------------------------------------------------------
+    # plots
+    # -----------------------------------------------------------------------
     if args.start == "plots" or args.start == "all":
         os.system(f'mkdir -p {folder_cnv}')
-        
+
         if 'marker_list' not in locals():
             marker_list = []
             if os.path.exists(f'{temp_folder}/{marker_list_file}'):
@@ -427,21 +612,22 @@ def main():
                     marker_list = [i[1:].strip() for i in f if i.startswith('>')]
 
         try:
-            region_bed(temp_folder,header,commands,marker_list,bed_file)
+            region_bed(temp_folder, header, commands, marker_list, bed_file)
         except NameError:
             if exact_path is not None:
-                commands = commandHandler(genome_source_path,exact_path,temp_folder,genome_with_markers, return_commands_only = True)
+                commands = commandHandler(genome_source_path, exact_path,
+                                         temp_folder, genome_with_markers,
+                                         return_commands_only=True)
             else:
-                commands = None
-            
-            markers = "|".join(marker_list)
-            region_bed(temp_folder,header,commands,marker_list,bed_file)
-            
+                commands = []
+            markers = "|".join(marker_list) if marker_list else ""
+            region_bed(temp_folder, header, commands, marker_list, bed_file)
+
         if not args.manual_plots:
             print("Plotting transgenes with igv-reports")
             if args.gtf is not None:
                 if exact_path is not None:
-                    gtf = new_gtf_sorted 
+                    gtf = new_gtf_sorted
                 else:
                     if os.path.exists(args.gtf):
                         gtf_basename = os.path.basename(args.gtf)
@@ -449,18 +635,24 @@ def main():
                         gtf = gtf_basename
                     else:
                         gtf = args.gtf
-            igvScreenshot_new(temp_folder,folder_insertion,f'{folder_insertion}/{aligned_diff_chr_bam}',f'{folder_insertion}/{genome_with_markers}',bed_file, gtf_file=gtf)
+            igvScreenshot_new(temp_folder, folder_insertion,
+                              f'{folder_insertion}/{aligned_diff_chr_bam}',
+                              os.path.abspath(f'{folder_insertion}/{genome_with_markers}'),
+                              bed_file, gtf_file=gtf)
         else:
             print("Plotting insertion site coverage manually")
             os.system(f'samtools depth -b {bed_file} {folder_insertion}/{aligned_diff_chr_bam} > {temp_folder}/{overall_coverage}')
-            chrHistograms(f'{temp_folder}/{overall_coverage}',marker_list)
+            chrHistograms(f'{temp_folder}/{overall_coverage}', marker_list)
             os.system(f'mv fig_* {folder_insertion}')
             os.system(f'mv *.cov {temp_folder}')
-            
+
         if args.keepgoing:
             print("Finished plots, continuing to Kraken (if enabled)")
             args.start = "kraken"
 
+    # -----------------------------------------------------------------------
+    # kraken
+    # -----------------------------------------------------------------------
     if args.start == "kraken" or args.start == "all":
         os.system(f'mkdir -p {folder_kraken}')
 
@@ -474,57 +666,176 @@ def main():
             print("Finished kraken, continuing to variant calling (if enabled)")
             args.start = "variant"
 
-    if args.start == "variant" or args.start == "all":
+    # -----------------------------------------------------------------------
+    # variant — call variants against the CHM13-aligned BAM
+    # Runs whenever variant_calling is not None (even an empty list).
+    # variant_calling=None → skip entirely.
+    # variant_calling=[]   → generate VCF + LOH but no ClinVar annotation.
+    # variant_calling=["clinvar.vcf"] → full pipeline including ClinVar.
+    # -----------------------------------------------------------------------
+    if (args.start == "variant" or args.start == "all") and \
+            args.variant_calling is not None:
         os.system(f'mkdir -p {folder_snp}')
-        if args.variant_calling is not None and args.variant_calling != []:
-            variant_genome_source_path = pathFinder(args.variant_calling[0]) 
-            clinvardb_source_path = pathFinder(args.variant_calling[1])
-            
-            if args.use_mem2:
-                print("Creating BWA-MEM2 index")
-                os.system(f"bwa-mem2 index {variant_genome_source_path}")
-            else:
-                if os.path.isfile(variant_genome_source_path+".bwt") and os.path.isfile(variant_genome_source_path+".pac") and os.path.isfile(variant_genome_source_path+".sa") and os.path.isfile(variant_genome_source_path+".ann") and os.path.isfile(variant_genome_source_path+".amb"):
-                    print("Detected that BWA indexing was already performed. Skipping BWA indexing.")
-                else:
-                    print("Existing BWA index not detected. Performing indexing.")
-                    os.system(f"bwa index {variant_genome_source_path}")
-            
-            if os.path.isfile(variant_genome_source_path+".fai"):
-                print("Detected that samtools faidx was already performed. Skipping samtools faidx.")
-            else:
-                print("Existing FASTA index not detected. Performing indexing.")
-                os.system(f"samtools faidx {variant_genome_source_path}")
-            
-            if args.use_mem2:
-                bwa_cmd = f"bwa-mem2 mem -M -t {threads} {variant_genome_source_path} {reads_1_path} {reads_2_path} > {temp_folder}/{variant_genome_aligned}"
-            else:
-                bwa_cmd = f"bwa mem -M -t {threads} {variant_genome_source_path} {reads_1_path} {reads_2_path} > {temp_folder}/{variant_genome_aligned}"
-            
-            exitcode = os.system(bwa_cmd)
-            if exitcode!=0: sys.exit("BWA failed")
-            
-            os.system(f"samtools sort -@ {threads} {temp_folder}/{variant_genome_aligned} > {temp_folder}/{variant_genome_aligned_bam}") 
-            os.system(f"samtools index -@ {threads} {temp_folder}/{variant_genome_aligned_bam}")
-            os.system(f"bcftools mpileup -Ou -f {variant_genome_source_path} {temp_folder}/{variant_genome_aligned_bam} | bcftools call -mv -Ov -o {temp_folder}/{variant_vcf}")
-            
-            if args.keepgoing:
-                args.start = "snp_filtering"
-            
-    if (args.start == "snp_filtering" or args.start == "all") and args.variant_calling is not None:
-            variant_genome_source_path = pathFinder(args.variant_calling[0])
-            clinvardb_source_path = pathFinder(args.variant_calling[1])
-            
-            os.system(f"snpEff -dataDir seqverify_defaults -v GRCh38.105 {temp_folder}/{variant_vcf} > {temp_folder}/{variant_vcf_ann}")
-            os.system(f"SnpSift annotate -v {clinvardb_source_path} {temp_folder}/{variant_vcf_ann} > {folder_snp}/{variant_vcf_ann}")
-            
-            if exact_path is None:
-                mutation_logger(folder_snp,variant_lof,variant_vcf_ann,args.min_quality,args.variant_intensity, args.variant_window_size)
-            else:
-                mutation_logger(folder_snp,variant_lof,variant_vcf_ann,args.min_quality,args.variant_intensity, args.variant_window_size, exact_path)
 
+        chm13_bam = f"{folder_insertion}/{aligned_diff_chr_bam}"
+        edited_genome = f"{temp_folder}/{genome_with_markers}"
+
+        if not os.path.isfile(edited_genome + ".fai"):
+            os.system(f"samtools faidx {edited_genome}")
+
+        print("Calling variants against edited CHM13 BAM...")
+        rc = os.system(
+            f"bcftools mpileup -Ou -f {edited_genome} {chm13_bam} | "
+            f"bcftools call -mv -Ov -o {temp_folder}/{variant_vcf}"
+        )
+        if rc != 0:
+            print(f"Warning: bcftools returned code {rc}")
+
+        if args.keepgoing:
+            args.start = "snp_filtering"
+
+    # -----------------------------------------------------------------------
+    # snp_filtering — coordinate adjustment, optional liftover + annotation,
+    #                 LOH detection, CNV quality filter
+    #
+    # Runs whenever variant_calling is not None.  Each sub-step is
+    # individually conditional so non-human genomes (no ClinVar, no SnpEff
+    # database, no chain file) still produce a VCF, LOH table, and filtered
+    # CNV calls.
+    # -----------------------------------------------------------------------
+    if (args.start == "snp_filtering" or args.start == "all") and \
+            args.variant_calling is not None:
+
+        os.system(f'mkdir -p {folder_snp}')
+
+        # Ensure commands is defined (when resuming from snp_filtering)
+        if 'commands' not in dir() and 'commands' not in locals():
+            if exact_path is not None:
+                commands = commandHandler(genome_source_path, exact_path,
+                                         temp_folder, genome_with_markers,
+                                         return_commands_only=True)
+            else:
+                commands = []
+
+        # Step 1: Adjust VCF coords — edited-CHM13 → unedited-CHM13
+        # Always runs; works on any genome.
+        print("Step 1: Adjusting VCF coordinates for genomic edits...")
+        adjust_vcf_for_edits(
+            vcf_in=f"{temp_folder}/{variant_vcf}",
+            edits=commands,
+            vcf_out=f"{temp_folder}/{variant_vcf_adjusted}",
+            edit_region_out=f"{temp_folder}/{variant_vcf_edit_region}"
+        )
+
+        # Track the best VCF available for downstream steps.
+        best_vcf = f"{temp_folder}/{variant_vcf_adjusted}"
+
+        # Step 2: CrossMap liftover — only if a chain file is configured.
+        # Skip for non-human genomes; analysis continues in source coordinates.
+        if args.chain_file:
+            chain_path = pathFinder(args.chain_file)
+            grch38_fa = None
+            if args.grch38_fasta:
+                grch38_fa = pathFinder(args.grch38_fasta)
+            else:
+                default_fa = "seqverify_defaults/Homo_sapiens.GRCh38.dna.primary_assembly.fa"
+                if os.path.isfile(default_fa):
+                    grch38_fa = os.path.abspath(default_fa)
+
+            print("Step 2: Lifting over variants to GRCh38...")
+            liftover_vcf(
+                vcf_in=f"{temp_folder}/{variant_vcf_adjusted}",
+                chain_file=chain_path,
+                ref_fasta=grch38_fa,
+                vcf_out=f"{temp_folder}/{variant_vcf_lifted}",
+                unmapped_out=f"{temp_folder}/seqverify_{output_name}_unmapped.vcf"
+            )
+            best_vcf = f"{temp_folder}/{variant_vcf_lifted}"
+        else:
+            print("Step 2: No chain_file configured — skipping liftover")
+
+        # Step 3: SnpEff annotation — only if a database name is configured.
+        # Leave variant_db empty/unset for non-human genomes without a DB.
+        variant_db = getattr(args, 'variant_db', None)
+        snpeff_ran = False
+        if variant_db:
+            snpeff_datadir = os.path.abspath("seqverify_defaults")
+            print(f"Step 3: Annotating with SnpEff ({variant_db})...")
+            run_snpeff(
+                args.max_mem,
+                f"-config {_SNPEFF_BUNDLED_CONFIG} -dataDir {snpeff_datadir} "
+                f"-v {variant_db} {best_vcf} > {temp_folder}/{variant_vcf_ann}"
+            )
+            best_vcf = f"{temp_folder}/{variant_vcf_ann}"
+            snpeff_ran = True
+        else:
+            print("Step 3: No variant_db configured — skipping SnpEff annotation")
+
+        # Step 4: ClinVar annotation — only if a ClinVar VCF is provided.
+        # Skip for non-human genomes.
+        clinvar_provided = bool(args.variant_calling)
+        if clinvar_provided:
+            clinvardb_source_path = pathFinder(args.variant_calling[0])
+            print("Step 4: Annotating with ClinVar (SnpSift)...")
+            run_snpsift(
+                args.max_mem,
+                f"annotate -v {clinvardb_source_path} "
+                f"{best_vcf} > {folder_snp}/{variant_vcf_ann}"
+            )
+            best_vcf = f"{folder_snp}/{variant_vcf_ann}"
+        else:
+            print("Step 4: No variant_calling ClinVar VCF — skipping ClinVar annotation")
+            # Copy best VCF into folder_snp so the output path is consistent
+            shutil.copy(best_vcf, f"{folder_snp}/{variant_vcf_ann}")
+            best_vcf = f"{folder_snp}/{variant_vcf_ann}"
+
+        # Step 5: Pathogenicity filtering — requires SnpEff ANN fields.
+        # Silently skipped on non-human genomes (produces empty output gracefully
+        # because the ANN field is absent, but still worth skipping explicitly).
+        if snpeff_ran:
+            print("Step 5: Applying pathogenicity filter...")
+            pathogenicity_logger(
+                folder=folder_snp,
+                output_file=variant_lof,
+                vcf_file=variant_vcf_ann,
+                min_quality=args.min_quality,
+                min_intensity=args.variant_intensity,
+                window_size=args.variant_window_size,
+                command_file=exact_path,
+                edit_commands=commands if commands else None
+            )
+        else:
+            print("Step 5: Skipping pathogenicity filter (requires SnpEff annotation)")
+
+        # Step 6: LOH detection — always runs; uses only GT/AD fields from
+        # the bcftools VCF, which are present for any genome.
+        print("Step 6: Detecting LOH around edit sites...")
+        detect_loh_around_edits(
+            vcf_file=best_vcf,
+            edit_commands=commands if commands else None,
+            output_file=f"{folder_snp}/{variant_loh}",
+            command_file=exact_path,
+            window=args.loh_window
+        )
+
+        # Step 7: CNV quality filtering — always runs; genome-agnostic.
+        print("Step 7: Filtering CNV calls...")
+        cnv_calls = f"{folder_cnv}/calls.{bin_size}.tsv"
+        if os.path.exists(cnv_calls):
+            filter_cnv_calls(
+                calls_tsv=cnv_calls,
+                output_tsv=f"{folder_cnv}/calls.{bin_size}_filtered.tsv",
+                bin_size=bin_size
+            )
+        else:
+            print(f"  CNV calls file not found: {cnv_calls} — skipping")
+
+    # -----------------------------------------------------------------------
+    # Cleanup
+    # -----------------------------------------------------------------------
     if not args.keep_temp:
         os.system(f'rm -r {temp_folder}')
+
 
 if __name__ == "__main__":
     main()
