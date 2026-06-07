@@ -10,6 +10,7 @@ dependencies:
   - bwa
   - bwa-mem2
   - cnvpytor
+  - crossmap
   - htslib
   - idna
   - igv=2.13.2
@@ -24,5 +25,3 @@ dependencies:
   - scipy
   - snpeff=5.3
   - snpsift=5.3
-  - pip:
-    - CrossMap

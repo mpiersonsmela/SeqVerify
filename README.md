@@ -9,7 +9,7 @@ SeqVerify is a Python-based command line tool for analysis of whole genome seque
 * BRACKEN
 * BWA ≥0.7 (or BWA-MEM2 with `--use_mem2`)
 * CNVPytor ≥1.3
-* CrossMap (install via `pip install CrossMap`)
+* CrossMap
 * HTSLIB
 * IDNA
 * IGV ≥2.13.2
@@ -24,10 +24,10 @@ SeqVerify is a Python-based command line tool for analysis of whole genome seque
 * SNPEff ≥5.3
 * SNPSift ≥5.3
 
-### Install through Conda
+### Install through Bioconda
 
 ```
-conda env create -f seqverify-env.yml
+conda install -c bioconda seqverify
 ```
 
 ## Usage
