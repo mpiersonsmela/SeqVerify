@@ -195,3 +195,11 @@ No; concatenate them first with `cat`.
 ### Are insertions of mitochondrial DNA a sign of contamination?
 
 Not necessarily — NUMTs (nuclear mitochondrial DNA segments) are common in the human genome.
+
+## Citation
+
+If you use SeqVerify, please cite:
+
+> Smela MP, Pepe V, Lubbe S, Kiskinis E, Church GM. SeqVerify: An accessible analysis tool for cell line genomic integrity, contamination, and gene editing outcomes. *Stem Cell Reports*. 2024;19(10):1505–1515. doi:[10.1016/j.stemcr.2024.08.004](https://doi.org/10.1016/j.stemcr.2024.08.004)
+
+Citation metadata is also provided in [`CITATION.cff`](CITATION.cff); GitHub's "Cite this repository" (on the right side of root) button generates APA and BibTeX from it.
