@@ -21,8 +21,8 @@ keywords:
   - copy-number-variation
   - insertion-site-detection
 authors:
-  - family-names: Smela
-    given-names: Merrick Pierson
+  - family-names: Pierson Smela
+    given-names: Merrick
   - family-names: Pepe
     given-names: Valerio
 preferred-citation:
@@ -31,8 +31,8 @@ preferred-citation:
     SeqVerify: An accessible analysis tool for cell line genomic integrity,
     contamination, and gene editing outcomes
   authors:
-    - family-names: Smela
-      given-names: Merrick Pierson
+    - family-names: Pierson Smela
+      given-names: Merrick
     - family-names: Pepe
       given-names: Valerio
     - family-names: Lubbe
