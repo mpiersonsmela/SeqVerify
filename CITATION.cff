@@ -1,0 +1,52 @@
+cff-version: 1.2.0
+message: >-
+  If you use this software, please cite the article below (the preferred
+  citation). You may additionally cite the software itself.
+title: SeqVerify
+abstract: >-
+  SeqVerify is a Python-based command line tool for analysis of whole genome 
+  sequencing data for gene-editing verification. It performs insertion site 
+  detection, copy number variation (CNV) analysis through CNVPytor, bacterial 
+  contamination detection through KRAKEN2 and BRACKEN, and variant calling and 
+  filtering aided by SnpEff and SnpSift.
+type: software
+license: GPL-3.0-or-later
+repository-code: "https://github.com/mpiersonsmela/SeqVerify"
+url: "https://github.com/mpiersonsmela/SeqVerify"
+keywords:
+  - bioinformatics
+  - whole-genome-sequencing
+  - gene-editing
+  - cell-line-authentication
+  - copy-number-variation
+  - insertion-site-detection
+authors:
+  - family-names: Smela
+    given-names: Merrick Pierson
+  - family-names: Pepe
+    given-names: Valerio
+preferred-citation:
+  type: article
+  title: >-
+    SeqVerify: An accessible analysis tool for cell line genomic integrity,
+    contamination, and gene editing outcomes
+  authors:
+    - family-names: Smela
+      given-names: Merrick Pierson
+    - family-names: Pepe
+      given-names: Valerio
+    - family-names: Lubbe
+      given-names: Steven
+    - family-names: Kiskinis
+      given-names: Evangelos
+    - family-names: Church
+      given-names: George M.
+  journal: Stem Cell Reports
+  volume: 19
+  issue: 10
+  start: 1505
+  end: 1515
+  year: 2024
+  publisher:
+    name: Elsevier
+  doi: 10.1016/j.stemcr.2024.08.004
