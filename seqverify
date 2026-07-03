@@ -126,7 +126,7 @@ def run_cnvpytor_analysis(folder_cnv, temp_folder, aligned_bam, genome_fasta,
                 parts = line.strip().split("\t")
                 name = parts[1].split(":")[1]
                 length = int(parts[2].split(":")[1])
-                if name in ["chrM", "MT", "M", "mitochondrion"]:
+                if name in ["chrM", "chrMT", "MT", "M", "mitochondrion"]:
                     chromosomes[name] = (length, "M")
                 elif name in ["chrX", "X", "chrY", "Y"]:
                     chromosomes[name] = (length, "S")
@@ -144,11 +144,36 @@ def run_cnvpytor_analysis(folder_cnv, temp_folder, aligned_bam, genome_fasta,
     }
     Genome.detected_genome = "custom"
 
-    if not os.path.exists(gc_file_path):
+    # Regenerate the GC file unless a *valid* one (with GC chromosomes) already
+    # exists. A stale/empty GC file from an interrupted run — which still passes
+    # os.path.exists() — would cause calculate_histograms to silently produce no
+    # histograms (CNVpytor only builds histograms for chromosomes present in the
+    # GC data), yielding blank CNV calls and an empty Manhattan plot.
+    gc_valid = False
+    if os.path.exists(gc_file_path):
+        try:
+            existing_gc = Root(gc_file_path, create=False, max_cores=1)
+            if len(existing_gc.io_gc.gc_chromosomes()) > 0:
+                gc_valid = True
+                print(f"Using existing GC content file: {gc_file_path}")
+            else:
+                print(f"Existing GC file has no chromosomes (stale/empty); regenerating: {gc_file_path}")
+                os.remove(gc_file_path)
+        except Exception as e:
+            print(f"Existing GC file unreadable ({e}); regenerating: {gc_file_path}")
+            try:
+                os.remove(gc_file_path)
+            except OSError:
+                pass
+
+    if not gc_valid:
         print(f"Generating GC content file: {gc_file_path}")
         try:
             app_gc = Root(gc_file_path, create=True, max_cores=1)
             app_gc.gc(genome_fasta, make_gc_genome_file=True)
+            # Verify the GC file actually contains chromosomes before trusting it
+            if len(app_gc.io_gc.gc_chromosomes()) == 0:
+                raise RuntimeError("GC generation produced no chromosomes")
             print("GC file generated successfully.")
         except Exception as e:
             print(f"Warning: GC generation failed: {e}")
