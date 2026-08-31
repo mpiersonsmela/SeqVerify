@@ -28,6 +28,16 @@ Date: 2026-06-05
 
 **Fix (`seqverify`):** Top-level call now uses `return_commands_only=True` (reads the command file, computes coordinate offsets, no I/O). Genome file creation is moved inside the `beginning` stage where it belongs.
 
+### Blank CNVpytor output from stale GC file
+**Problem:** `run_cnvpytor_analysis` skipped GC-content generation whenever a GC `.pytor` file already existed (`if not os.path.exists(gc_file_path)`). An empty or truncated GC file left behind by an interrupted run passed this check, so generation was skipped. CNVpytor's `calculate_histograms` only builds histograms for chromosomes present in the GC data, so an empty GC file produced **zero histograms, zero CNV calls, and a blank Manhattan plot — with no error raised**.
+
+**Fix (`seqverify`):** The GC step now validates an existing file with `io_gc.gc_chromosomes() > 0` before reusing it; stale/empty/unreadable files are deleted and regenerated. GC generation also verifies it produced at least one chromosome before the file is trusted.
+
+### Mitochondrial chromosome named `chrMT` not recognized
+**Problem:** The chromosome-type classifier in `run_cnvpytor_analysis` matched `chrM`/`MT`/`M`/`mitochondrion` but not `chrMT` (used by some assemblies, e.g. the cynomolgus T2T-MFA8v1.1 genome), so the mitochondrion was mis-typed as an autosome.
+
+**Fix (`seqverify`):** Added `chrMT` to the mitochondrial name list.
+
 ---
 
 ## New Features
