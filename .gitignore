@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+*_seqverify/
+*_seqverify_temp/
