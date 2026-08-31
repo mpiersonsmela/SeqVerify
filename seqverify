@@ -111,6 +111,44 @@ def run_snpsift(max_mem, args_str):
     return rc
 
 
+def mark_duplicates(bam, threads):
+    """Mark PCR/optical duplicates in a coordinate-sorted BAM, in place.
+
+    Flow: name-sort -> fixmate -m (adds ms/MC tags) -> coord-sort -> markdup.
+    Duplicates are MARKED (flag 0x400), not removed: bcftools mpileup skips
+    DUP-flagged reads by default (--ff UNMAP,SECONDARY,QCFAIL,DUP), and CNVpytor
+    excludes them too, so marking is sufficient to keep duplicate fragments from
+    inflating read-depth and variant allele fractions.
+
+    Idempotent: if the BAM header already records a samtools markdup step, this
+    is a no-op (so re-running the variant stage on an already-deduplicated BAM
+    does not re-process it).
+    """
+    try:
+        hdr = os.popen(f"samtools view -H {bam}").read()
+    except Exception:
+        hdr = ""
+    if "samtools markdup" in hdr:
+        print(f"[markdup] {bam} already deduplicated; skipping")
+        return 0
+    tmp = f"{bam}.markdup.tmp.bam"
+    print(f"[markdup] marking duplicates in {bam}")
+    rc = os.system(
+        f"samtools sort -n -@ {threads} {bam} | "
+        f"samtools fixmate -m -@ {threads} - - | "
+        f"samtools sort -@ {threads} - | "
+        f"samtools markdup -@ {threads} - {tmp}"
+    )
+    if rc != 0:
+        print(f"Warning: markdup failed (rc={rc}); leaving {bam} unchanged")
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        return rc
+    os.replace(tmp, bam)
+    os.system(f"samtools index -@ {threads} {bam}")
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # CNVpytor (unchanged from seqverify-mem2)
 # ---------------------------------------------------------------------------
@@ -241,6 +279,16 @@ def main():
                         required=False, default=False)
     parser.add_argument('--use_mem2', action='store_const', const=True,
                         required=False, default=False)
+    parser.add_argument('--deduplicate', action=argparse.BooleanOptionalAction,
+                        default=True,
+                        help='Mark PCR/optical duplicates before CNV and variant '
+                             'calling so they do not inflate read depth or allele '
+                             'fractions (default: enabled; use --no-deduplicate to disable).')
+    parser.add_argument('--analyze_nonhdr', action=argparse.BooleanOptionalAction,
+                        default=True,
+                        help='Reconstruct and annotate the non-HDR allele at each '
+                             'targeted edit site (default: enabled; use '
+                             '--no-analyze-nonhdr to disable).')
 
     parser.add_argument('--genome', type=str, required=False,
                         default=f"{os.getcwd()}/seqverify_defaults/chm13v2.0.fa")
@@ -320,6 +368,9 @@ def main():
         args.stringency = float(config["INSERTION"]["stringency"])
         args.spurious_filtering_threshold = float(
             config["INSERTION"]["spurious_filtering_threshold"])
+        # Optional toggles (default enabled when the key is absent → backward compatible)
+        args.deduplicate = config["INSERTION"].get("deduplicate", "True") == "True"
+        args.analyze_nonhdr = config["INSERTION"].get("analyze_nonhdr", "True") == "True"
         args.manual_plots = bool(config["CNV"]["manual_plots"] == "True")
         args.bin_size = int(config["CNV"]["bin_size"])
         # variant_calling is now a 1-element list: ["path/to/clinvar.vcf"]
@@ -572,6 +623,10 @@ def main():
         # Sort full alignment — this BAM is reused for CNVpytor AND variant calling
         os.system(f"samtools sort -@ {threads} {temp_folder}/{aligned_with_markers} > {folder_insertion}/{aligned_diff_chr_bam}")
         os.system(f"samtools index -@ {threads} {folder_insertion}/{aligned_diff_chr_bam}")
+        # Mark PCR/optical duplicates so they are excluded from CNV read-depth and
+        # variant allele-fraction estimation (bcftools/CNVpytor skip DUP-flagged reads).
+        if args.deduplicate:
+            mark_duplicates(f"{folder_insertion}/{aligned_diff_chr_bam}", threads)
         os.system(f'samtools view -@ {threads} -H {folder_insertion}/{aligned_diff_chr_bam} > {temp_folder}/{header}')
 
         if args.keepgoing:
@@ -601,7 +656,40 @@ def main():
             readout(folder_insertion, {}, {}, marker_list, min_matches)
 
         if args.keepgoing:
-            print("Finished markers, continuing to CNV")
+            print("Finished readout, continuing to non-HDR analysis")
+            args.start = "nonhdr"
+
+    # -----------------------------------------------------------------------
+    # nonhdr — reconstruct + annotate the non-HDR allele at each targeted edit
+    #          site (the allele that did NOT receive the HDR cassette). Uses the
+    #          insertion BAM + edits file; assembles non-HDR reads with SPAdes and
+    #          builds a per-site IGV report. Enabled by default (--no-analyze-nonhdr
+    #          to skip; also skipped automatically when there is no targeted edits file).
+    # -----------------------------------------------------------------------
+    if args.start == "nonhdr" or args.start == "all":
+        if args.analyze_nonhdr and args.targeted:
+            nonhdr_script = os.path.join(_script_dir, "seqver_nonhdr.sh")
+            nonhdr_bam = f"{folder_insertion}/{aligned_diff_chr_bam}"
+            nonhdr_out = f"{folder}/nonHDR_allele"
+            if (os.path.isfile(nonhdr_script) and os.path.isfile(nonhdr_bam)
+                    and os.path.isfile(args.targeted)):
+                print("Reconstructing non-HDR allele(s) at edit sites...")
+                rc = os.system(
+                    f'bash "{nonhdr_script}" --bam "{nonhdr_bam}" '
+                    f'--edits "{args.targeted}" --genome "{args.genome}" '
+                    f'--gtf "{args.gtf}" --out "{nonhdr_out}" --threads {threads} '
+                    f'--python "{sys.executable}"'
+                )
+                if rc != 0:
+                    print(f"Warning: non-HDR analysis returned code {rc}")
+            else:
+                print("Skipping non-HDR analysis (missing helper script, BAM, "
+                      "or targeted edits file).")
+        elif not args.analyze_nonhdr:
+            print("Skipping non-HDR analysis (--no-analyze-nonhdr).")
+
+        if args.keepgoing:
+            print("Finished non-HDR analysis, continuing to CNV")
             args.start = "cnv"
 
     # -----------------------------------------------------------------------
@@ -609,6 +697,13 @@ def main():
     # -----------------------------------------------------------------------
     if args.start == "cnv" or args.start == "all":
         os.system(f'mkdir -p {folder_cnv}')
+
+        # Ensure duplicates are marked before read-depth CNV calling. No-op if the
+        # markers stage already marked them; on a rerun (start=cnv) against an
+        # older, non-deduplicated BAM this marks them now so PCR/optical duplicates
+        # do not inflate CNVpytor read-depth.
+        if args.deduplicate:
+            mark_duplicates(f"{folder_insertion}/{aligned_diff_chr_bam}", threads)
 
         run_cnvpytor_analysis(
             folder_cnv=folder_cnv,
@@ -704,6 +799,13 @@ def main():
 
         chm13_bam = f"{folder_insertion}/{aligned_diff_chr_bam}"
         edited_genome = f"{temp_folder}/{genome_with_markers}"
+
+        # Ensure duplicates are marked before calling. No-op if the markers stage
+        # already marked them; on a rerun (start=variant) against an older,
+        # non-deduplicated BAM this marks them now so PCR/optical duplicates do
+        # not inflate allele fractions.
+        if args.deduplicate:
+            mark_duplicates(chm13_bam, threads)
 
         if not os.path.isfile(edited_genome + ".fai"):
             os.system(f"samtools faidx {edited_genome}")

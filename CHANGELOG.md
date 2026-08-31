@@ -149,3 +149,35 @@ The original pipeline hardcoded `GRCh38.105` (an Ensembl release number valid fo
 ## Unchanged Files (copied verbatim from base)
 
 `seqver_functions.py`, `seqver_plots.py`, `seqver_gtf.py`, `seqver_genomeupdate.py`, `seqver_lofFinder.py` (kept for backward compatibility; superseded by `seqver_pathogenicity.py`).
+
+---
+
+## New Features (duplicate marking, non-HDR analysis, plasmid helper)
+
+### 7. Duplicate marking before CNV/variant calling (`seqverify`)
+`mark_duplicates()` runs name-sort → `samtools fixmate -m` → sort → `markdup` on the
+insertion BAM before CNV and variant calling, so PCR/optical duplicates do not inflate
+read depth or variant allele fractions. Duplicates are *marked* (flag 0x400), not removed —
+bcftools mpileup skips DUP-flagged reads by default and CNVpytor excludes them. Idempotent
+(no-op if the BAM header already records a markdup step, so `--start variant`/`cnv` reruns
+are safe). Enabled by default; `--no-deduplicate` (config `[INSERTION] deduplicate`) skips it.
+
+### 8. Non-HDR allele analysis (`seqver_nonhdr.sh`, new `nonhdr` stage)
+For each `--targeted` edit site, reconstructs and annotates the allele that did not receive
+the HDR cassette: extract locus read pairs → realign to a WT ±10 kb mini-reference (HDR reads
+soft-clip at the cassette junction; non-HDR reads span the cut) → classify WT vs scar (pysam)
+→ SPAdes-assemble the non-HDR reads → realign contigs → annotate CDS impact + distance to the
+nearest splice site → standalone IGV report + `SUMMARY.txt` zygosity verdict in
+`<output>_seqverify/nonHDR_allele/`. Enabled by default; `--no-analyze-nonhdr`
+(config `[INSERTION] analyze_nonhdr`) skips it, and it is skipped automatically when there is
+no targeted edits file. **New dependency: SPAdes.**
+
+### 9. Helper: `scripts/make_edits_from_plasmid.py`
+Generates a `--targeted` edits file from a GenBank HDR donor plasmid by BLASTing its homology
+arms against the reference and emitting the cargo between them; Rox-flanked selection
+cassettes are collapsed to a single Rox scar by default (`--keep-rox` disables). Uses NCBI
+BLAST+ (already a dependency); no Biopython.
+
+### Dependencies / installation
+`seqverify-env.yml`: added `pysam` (non-HDR classifier) and `spades` (non-HDR assembly).
+`setup.sh` fetches the CHM13→hg38 liftover chain. Tests added under `tests/`.
