@@ -94,7 +94,8 @@ def pathogenicity_logger(folder, output_file, vcf_file,
     """
     Parse an SnpEff+ClinVar-annotated VCF and write a clinically-tiered TSV.
 
-    edit_commands: list of editArgument objects (preferred) or None.
+    edit_commands: list of EditSite/editArgument objects (preferred) or None,
+                   in the SAME coordinate space as the VCF (GRCh38 when lifted).
     command_file:  path to targeted edits file (fallback if edit_commands is None).
     """
     intensities = ["MODIFIER", "LOW", "MODERATE", "HIGH"]

@@ -136,6 +136,42 @@ def test_pathogenicity_tiers():
 
 
 # --------------------------------------------------------------------------- #
+def test_edit_site_liftover():
+    """Edit sites are read in unedited coords and lifted into the VCF's space
+    (regression: NEAR_EDIT/LOH compared GRCh38 VCF positions to CHM13 sites)."""
+    import shutil
+    from seqver_liftover import edit_sites_from_file, liftover_edit_sites
+    with tempfile.TemporaryDirectory() as d:
+        edits = os.path.join(d, "edits.txt")
+        with open(edits, "w") as f:
+            # two edits on one chromosome: the second must NOT be shifted by
+            # the first (commandHandler shifts it; the VCF is unedited coords)
+            f.write("chr1:500000-500010\tACGTACGTACGTACGTACGT\n")
+            f.write("chr1:700000-700004\tAAAAAAAAAAAAAAAAAAAAAAAA\n")
+            f.write("chr2:100-110\tACGT\n")   # not on the chain → dropped
+        sites = edit_sites_from_file(edits)
+        assert [(s.chr, s.coords) for s in sites] == [
+            ("chr1", [500000, 500010]), ("chr1", [700000, 700004]), ("chr2", [100, 110])]
+
+        if shutil.which("CrossMap") is None:
+            print("  (CrossMap not installed — skipping liftover half)")
+            return
+        # synthetic chain: chr1 source maps to chr1 target shifted +100 kb
+        chain = os.path.join(d, "test.chain")
+        with open(chain, "w") as f:
+            f.write("chain 1000 chr1 1000000 + 0 1000000 chr1 1100000 + 100000 1100000 1\n")
+            f.write("1000000\n\n")
+        lifted = liftover_edit_sites(sites, chain, os.path.join(d, "t"))
+        assert [(s.chr, s.coords, s.label) for s in lifted] == [
+            ("chr1", [600000, 600010], "chr1:500000-500010"),
+            ("chr1", [800000, 800004], "chr1:700000-700004")], lifted
+
+        # NEAR_EDIT must use the lifted site
+        from seqver_pathogenicity import _build_edit_coords
+        assert _build_edit_coords(None, lifted) == {"chr1": [600000, 800000]}
+
+
+# --------------------------------------------------------------------------- #
 def test_cli_help():
     """Main script and plasmid helper expose --help and the new toggles."""
     env = dict(os.environ)

@@ -31,7 +31,8 @@ from seqver_plots import *
 from seqver_genomeupdate import *
 from seqver_lofFinder import *
 from seqver_gtf import *
-from seqver_liftover import adjust_vcf_for_edits, liftover_vcf
+from seqver_liftover import (adjust_vcf_for_edits, liftover_vcf,
+                             edit_sites_from_file, liftover_edit_sites)
 from seqver_pathogenicity import pathogenicity_logger
 from seqver_cnv_filter import filter_cnv_calls
 from seqver_loh import detect_loh_around_edits
@@ -857,6 +858,11 @@ def main():
         # Track the best VCF available for downstream steps.
         best_vcf = f"{temp_folder}/{variant_vcf_adjusted}"
 
+        # Edit sites for NEAR_EDIT tagging and LOH windows, in the same
+        # coordinate space as best_vcf: original (unedited CHM13) coords from
+        # the edits file, lifted to GRCh38 below if the VCF is lifted.
+        edit_sites = edit_sites_from_file(exact_path)
+
         # Step 2: CrossMap liftover — only if a chain file is configured.
         # Skip for non-human genomes; analysis continues in source coordinates.
         if args.chain_file:
@@ -878,6 +884,9 @@ def main():
                 unmapped_out=f"{temp_folder}/seqverify_{output_name}_unmapped.vcf"
             )
             best_vcf = f"{temp_folder}/{variant_vcf_lifted}"
+            edit_sites = liftover_edit_sites(
+                edit_sites, chain_path,
+                tmp_prefix=f"{temp_folder}/seqverify_{output_name}")
         else:
             print("Step 2: No chain_file configured — skipping liftover")
 
@@ -928,8 +937,8 @@ def main():
                 min_quality=args.min_quality,
                 min_intensity=args.variant_intensity,
                 window_size=args.variant_window_size,
-                command_file=exact_path,
-                edit_commands=commands if commands else None
+                command_file=None,
+                edit_commands=edit_sites
             )
         else:
             print("Step 5: Skipping pathogenicity filter (requires SnpEff annotation)")
@@ -939,9 +948,9 @@ def main():
         print("Step 6: Detecting LOH around edit sites...")
         detect_loh_around_edits(
             vcf_file=best_vcf,
-            edit_commands=commands if commands else None,
+            edit_commands=edit_sites,
             output_file=f"{folder_snp}/{variant_loh}",
-            command_file=exact_path,
+            command_file=None,
             window=args.loh_window
         )
 

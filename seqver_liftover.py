@@ -148,3 +148,90 @@ def liftover_vcf(vcf_in, chain_file, ref_fasta, vcf_out, unmapped_out=None):
         print(f"CrossMap: {n} variants lifted to GRCh38")
     else:
         print("Warning: CrossMap produced no output file")
+
+
+class EditSite:
+    """
+    Minimal edit-site record for downstream site-based analyses (NEAR_EDIT
+    tagging, LOH windows).  Duck-types the .chr/.coords fields of
+    editArgument; .label keeps the site as written in the edits file.
+    """
+    def __init__(self, chrom, start, end, label):
+        self.chr = chrom
+        self.coords = [start, end]
+        self.label = label
+
+    def __repr__(self):
+        return f"EditSite({self.chr}:{self.coords[0]}-{self.coords[1]}, {self.label})"
+
+
+def edit_sites_from_file(command_file):
+    """
+    Read edit sites from a targeted edits file in their original (unedited
+    CHM13) coordinates.  Unlike commandHandler(), coordinates are NOT shifted
+    for earlier edits on the same chromosome, so they match the space of the
+    VCF written by adjust_vcf_for_edits().
+    """
+    sites = []
+    if not command_file or not os.path.exists(command_file):
+        return sites
+    with open(command_file) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            site = line.split("\t")[0]
+            chrom, span = site.split(":")
+            start, end = [int(x) for x in span.split("-")]
+            sites.append(EditSite(chrom, start, end, site))
+    return sites
+
+
+def liftover_edit_sites(sites, chain_file, tmp_prefix):
+    """
+    Lift EditSite records from CHM13 to GRCh38 so they share coordinates with
+    the lifted VCF.  Each endpoint is lifted as a 1-bp interval (robust to
+    chain gaps splitting the span); if one endpoint fails the other is used
+    for both.  Sites that cannot be lifted are dropped with a warning.
+    """
+    import subprocess
+    import shutil
+
+    if not sites:
+        return []
+    crossmap_bin = shutil.which("CrossMap") or os.path.expanduser(
+        "~/miniconda3/envs/seqverify/bin/CrossMap")
+
+    bed_in = f"{tmp_prefix}_edit_sites.chm13.bed"
+    bed_out = f"{tmp_prefix}_edit_sites.grch38.bed"
+    with open(bed_in, "w") as b:
+        for i, s in enumerate(sites):
+            b.write(f"{s.chr}\t{s.coords[0]}\t{s.coords[0] + 1}\t{i}_start\n")
+            end_pt = max(s.coords[0], s.coords[1] - 1)
+            b.write(f"{s.chr}\t{end_pt}\t{end_pt + 1}\t{i}_end\n")
+    subprocess.run([crossmap_bin, "bed", chain_file, bed_in, bed_out],
+                   capture_output=True, text=True)
+
+    lifted = {}
+    if os.path.exists(bed_out):
+        with open(bed_out) as b:
+            for line in b:
+                f = line.rstrip("\n").split("\t")
+                if len(f) < 4:
+                    continue
+                idx, which = f[3].split("_")
+                lifted.setdefault(int(idx), {})[which] = (f[0], int(f[1]))
+
+    out = []
+    for i, s in enumerate(sites):
+        pts = lifted.get(i, {})
+        start = pts.get("start") or pts.get("end")
+        end = pts.get("end") or pts.get("start")
+        if start is None or start[0] != end[0]:
+            print(f"Warning: edit site {s.label} could not be lifted to GRCh38; "
+                  "it is excluded from NEAR_EDIT tagging and LOH detection")
+            continue
+        lo, hi = sorted([start[1], end[1]])
+        out.append(EditSite(start[0], lo, hi + 1, s.label))
+        print(f"  Edit site {s.label} (CHM13) -> {start[0]}:{lo}-{hi + 1} (GRCh38)")
+    return out
