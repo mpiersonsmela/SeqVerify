@@ -8,6 +8,11 @@ Date: 2026-06-05
 
 ## Bug Fixes
 
+### NEAR_EDIT tagging and LOH windows used CHM13 edit coordinates against a GRCh38 VCF (2026-10-23)
+**Problem:** Step 5 (pathogenicity/NEAR_EDIT) and Step 6 (LOH) ran on the GRCh38-lifted VCF but compared it with edit sites still in CHM13 coordinates (and, for a second edit on the same chromosome, shifted by the first edit's length). CHM13→GRCh38 offsets range from kilobases to megabases depending on locus, so `NEAR_EDIT` and `_loh.tsv` could describe regions far from the actual edits.
+
+**Fix:** `seqver_liftover.edit_sites_from_file()` reads sites in original (unedited) coordinates; `liftover_edit_sites()` lifts them with CrossMap through the same chain as the VCF. Both steps now receive these sites; without a chain file they stay in CHM13 coordinates, matching the unlifted VCF. `_loh.tsv` `EDIT_SITE` keeps the label from the edits file while `CHR`/`WINDOW_*` are in the VCF's coordinates. Regression test: `test_edit_site_liftover`.
+
 ### Java version incompatibility (SnpEff/SnpSift)
 **Problem:** The `seqverify` conda environment ships OpenJDK 11, but SnpEff 5.3.0a was compiled against Java 21 (`class file version 65.0 > 55.0`). This caused `UnsupportedClassVersionError` every time SnpEff or SnpSift was invoked, silently producing empty annotation output.
 

@@ -88,7 +88,7 @@ def _build_edit_sites(edit_commands, command_file):
     if edit_commands:
         for cmd in edit_commands:
             center = (cmd.coords[0] + cmd.coords[1]) // 2
-            label = f"{cmd.chr}:{cmd.coords[0]}-{cmd.coords[1]}"
+            label = getattr(cmd, "label", f"{cmd.chr}:{cmd.coords[0]}-{cmd.coords[1]}")
             sites.append((cmd.chr, center, label))
     elif command_file and os.path.exists(command_file):
         with open(command_file) as f:
@@ -114,8 +114,10 @@ def detect_loh_around_edits(vcf_file, edit_commands, output_file,
     """
     Detect LOH around each edit site.
 
-    vcf_file:      path to final annotated VCF (GRCh38 coordinates)
-    edit_commands: list of editArgument objects, or None for wild-type
+    vcf_file:      path to final annotated VCF
+    edit_commands: list of EditSite/editArgument objects in the SAME coordinate
+                   space as vcf_file (see seqver_liftover.liftover_edit_sites),
+                   or None for wild-type
     output_file:   path for output TSV
     command_file:  fallback if edit_commands is None
     window:        half-window size in bp around each edit center
