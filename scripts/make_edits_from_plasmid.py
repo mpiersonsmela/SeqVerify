@@ -28,9 +28,9 @@ Method
 Usage
 -----
   python make_edits_from_plasmid.py \
-      --plasmid edits/synapsis_edits/phdr2-six6os1-mscarlet.gb \
+      --plasmid edits/my_hdr_donor.gb \
       --ref     seqverify_defaults/chm13v2.0.fa \
-      --out     edits/SIX6OS1-mScarlet.txt
+      --out     edits/my_edit.txt
 
   # keep the selection cassette (do not excise Rox):
   python ... --keep-rox
